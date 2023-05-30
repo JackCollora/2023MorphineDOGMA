@@ -1,0 +1,9 @@
+module load CellRanger-ARC; cellranger-arc count --id=JC4 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC4_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC5 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC5_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC6 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC6_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC7 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC7_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC8 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC8_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC9 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC9_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC10 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC10_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC11 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC11_library.csv --localcores=20 --localmem=120
+module load CellRanger-ARC; cellranger-arc count --id=JC12 --reference=/home/jac369/project/refs/refdata-cellranger-arc-GRCh38-2020-A-2.0.0 --libraries=librarie/JC12_library.csv --localcores=20 --localmem=120
