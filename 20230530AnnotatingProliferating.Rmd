@@ -1,0 +1,69 @@
+---
+title: "Annotating Proliferating Modules"
+output: html_document
+date: '2023-05-30'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Goals 
+
+Objective here is to annotate the modules with their known funciton and indicate if they have any interesting differential activity across conditions, suggesting they have a differential impact across individuals. This is a continuation of the mod id on 20230529, and is using those three groups of mods:
+
+1. Treatmnet + Timepoint 
+2. Treatment 
+3. All cells
+
+In general, the first group is most likely to have an interesting geneset that differentiates the groups but it is also most likely to be noisy, while group three is the opposite. 
+
+```{r setup, include=FALSE}
+
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(cowplot))
+suppressPackageStartupMessages(library(Seurat))
+
+#loading data
+results<-readRDS( "~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230529CD4ObjAnno.rds")
+mods1<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules_Treatment_Timepoint.rds")
+mods2<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules_Treatment.rds")
+mods3<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules.rds")
+#setting correct default
+DefaultAssay(results)<-"RNA"
+```
+
+## ontology annotation 
+First, we'll write each mod to an individual list just to make it easy to use Enrichr (https://maayanlab.cloud/Enrichr/). We'll be focusing on GO terms (pathway, component, function) and diseases/drugs (just to see if morphine even comes up). 
+
+```{r export for enrichr}
+mods<-c(mods1, mods2, mods3)
+
+for (i in names(mods)){
+  write.table(mods[[i]], file=paste0("~/gibbs/DOGMAMORPH/Ranalysis/modules/proliferation/",i,".txt"), quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "")
+}
+
+```
+
+```{r readin enrichr ploting, fig.width=16, fig.height=9}
+
+#borrowing some rushmore colors from the wes anderson color pack
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+
+
+#defining a quick function to read in and plot Enrichr 
+
+PlotEnrichment<-function(file, topn=10, returnplot=TRUE, title="Significant Pathways"){
+  data<-read.table(file, sep = "\t", header=1)
+  data$value<- -log10(data$`Adjusted P-value`)
+  #order by most signfiicant 
+  data<-data[order(data$value, decreasing = TRUE),]
+  #subset to top n 
+  data<-data[1:topn,]
+  plot<-ggplot(data, aes(x=value, y=Term))+geom_bar(stat="identity", fill=BottleRocket2[2])+xlab("-log10(p_adj)")+ylab("Pathway")+ggtitle(title)+theme_classic()
+  if(returnplot){return(plot)}
+  return(data)
+}
+
+```
