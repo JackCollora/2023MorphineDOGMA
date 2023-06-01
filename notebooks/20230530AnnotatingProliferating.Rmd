@@ -1,0 +1,125 @@
+---
+title: "Annotating Proliferating Modules"
+output: html_document
+date: '2023-05-30'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Goals 
+
+Objective here is to annotate the modules with their known funciton and indicate if they have any interesting differential activity across conditions, suggesting they have a differential impact across individuals. This is a continuation of the mod id on 20230529, and is using those three groups of mods:
+
+1. Treatmnet + Timepoint 
+2. Treatment 
+3. All cells
+
+In general, the first group is most likely to have an interesting geneset that differentiates the groups but it is also most likely to be noisy, while group three is the opposite. 
+
+```{r setup packages, include=FALSE}
+
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(cowplot))
+suppressPackageStartupMessages(library(Seurat))
+
+#loading data
+results<-readRDS( "~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230529CD4ObjAnno.rds")
+mods1<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules_Treatment_Timepoint.rds")
+mods2<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules_Treatment.rds")
+mods3<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/modules/20230529ProliferatingModules.rds")
+#setting correct default
+DefaultAssay(results)<-"RNA"
+```
+
+##exploratory analysis
+
+The objective here is to first identify ones that are interesting across groups, and then go and annotate just those as more interesting vs not. The trick here is to meet criteria that filter out uninteresting stuff. 
+
+1. Not driven by just one participant 
+2. Based on our hypothesis, we expect it to be equal at time 0 and diverge at time 3. 
+
+Both of these criteria may be challenging because of the low cell number, so we'll look at them both in proliferating cells and in an alternative set of cells. For me, I'll check Central_Memory and Naive_T_1. These are selected mainly to represent the memory and naive background. 
+
+```{r exploring mods}
+mods<-c(unlist(mods1, recursive = F), unlist(mods2, recursive = F), mods3)
+
+#first we score these across all cells 
+
+results<-AddModuleScore(results, mods, name = names(mods))
+results$T_TP<-paste(results$Treatment, results$Timepoint, sep="_")
+#then we write a loop that will generate a pdf of the desired plots 
+
+for (i in names(results@meta.data)[34:52]){
+  pdf(paste0("~/gibbs/DOGMAMORPH/Ranalysis/modules/proliferation/",i,".pdf"))
+  print(FeaturePlot(results, i, min.cutoff = 'q5', max.cutoff = 'q95'))
+  print(VlnPlot(results, i,idents = "Proliferating", split.by = "T_TP"))
+  print(VlnPlot(results, i,idents = "Central_Memory", split.by = "T_TP"))
+  print(VlnPlot(results, i,idents = "Naive_T_1", split.by = "T_TP"))
+  print(VlnPlot(results, i,idents = "Naive_T_1", split.by = "Participant"))
+  print(VlnPlot(results, i,idents = "Naive_T_1", split.by = "orig.ident"))
+  dev.off()
+  }
+
+```
+
+
+## ontology annotation 
+First, we'll write each mod to an individual list just to make it easy to use Enrichr (https://maayanlab.cloud/Enrichr/). Initially, I'm just looking at GO processes. 
+
+```{r export for enrichr}
+#grab just the interesting ones 
+
+mods_interest<-mods[c("Bup.Nalo_0_black","Bup.Nalo_3_blue","Bup.Nalo_green","Naltrexone_0_magenta","Naltrexone_3_brown")]
+
+mods_interest
+
+for (i in names(mods_interest)){
+  write.table(mods_interest[[i]], file=paste0("~/gibbs/DOGMAMORPH/Ranalysis/modules/proliferation/",i,".txt"), quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "")
+}
+
+```
+
+```{r readin enrichr ploting, fig.width=16, fig.height=9}
+
+#borrowing some rushmore colors from the wes anderson color pack
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+
+
+#defining a quick function to read in and plot Enrichr 
+
+PlotEnrichment<-function(file, topn=10, returnplot=TRUE, title="Significant Pathways"){
+  data<-read.table(file, sep = "\t", header=1)
+  data$value<- -log10(data$Adjusted.P.value)
+  #order by most signfiicant 
+  data$Term<-factor(data$Term, levels = rev(data$Term))
+  data<-data[order(data$value, decreasing = TRUE),]
+  #subset to top n 
+  data<-data[1:topn,]
+  plot<-ggplot(data, aes(x=value, y=Term))+geom_bar(stat="identity", fill=BottleRocket2[2])+xlab("-log10(p_adj)")+ylab("Pathway")+ggtitle(title)+theme_classic()
+  if(returnplot){return(plot)}
+  return(data)
+}
+
+todo<-list.files("~/gibbs/DOGMAMORPH/Ranalysis/modules/proliferation/enrichr/")
+
+for (i in todo){
+  print(PlotEnrichment(paste0("~/gibbs/DOGMAMORPH/Ranalysis/modules/proliferation/enrichr/",i), topn = 20, title=i))
+}
+
+```
+
+
+# Conclusion 
+
+It appears the only modules that are obviously different between conditions are related to proliferation iteself, despite conditions. This suggests that we don't have distinct modules identifiable in proliferation across conditions. I did note that a subset of modules did reflect batch effect, and a subset seems to mark a specific subset. Based on that, it appears that Central_memory, Naive_T_3, Naive_T_1, and CD8_TEMRA are all marked by a common gene program, exemplified by "Naltrexone_0_turquoise". 
+
+Next steps: 
+Modules across CD4 (without those above populations) 
+Batch corrected analysis of total Proliferating 
+
+```{r session info}
+devtools::session_info()
+```

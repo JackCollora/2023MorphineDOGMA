@@ -1,0 +1,133 @@
+---
+title: "20230529CD4Anno"
+output: html_document
+date: '2023-05-29'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# CD4 annotation
+
+Goal here is to annotate the CD4 (plus some CD8) compartment so that we can have a distinction between the subpopulations there. So far, we have subseted CD4, reintegrated our three modalities and called clusters. I'll be trying to plug into the existing annotations from Collora et al immunity, and other known surface markers. 
+
+```{r loading, fig.width=16, fig.height=9}
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Signac))
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230526CD4Obj.rds")
+
+```
+
+First we're going to merge in very small clussters to their probably true cluster membership. In this case there's an obvious dropoff from cluster 14 to cluster 15 (3 cells) which suggests the clusters below that are probably more technical artifact due to outliers in one or more of the modalities than true separate clusters. 
+
+```{r merge tiny, fig.width=16, fig.height=9}
+table(results$seurat_clusters)
+
+DimPlot(results, label=TRUE)
+
+results$CD4anno<-case_when(results$seurat_clusters==19~0,results$seurat_clusters==18~0,results$seurat_clusters==17~2,results$seurat_clusters==16~7,results$seurat_clusters==15~0,T~as.numeric(results$seurat_clusters)-1 )
+
+Idents(results)<-results$CD4anno
+
+DimPlot(results, label=TRUE)
+
+
+```
+
+Next we're going to use markers to try and define local maxima or clusters that are marked by these features 
+
+```{r known markers, fig.width=16, fig.height=9}
+CD4_marks_Collora_RNA<-c("GZMB", "CCL5", "TBX21", "GZMK","GATA3","RORC", "CTSH","FOXP3", "IL2RA","MKI67", "CXCR5", "CCR7", "SELL", "TCF7", "mt")
+
+DefaultAssay(results)<-"RNA"
+
+FeaturePlot(results, CD4_marks_Collora_RNA)
+DotPlot(results, features = CD4_marks_Collora_RNA)
+DefaultAssay(results)<-"ADT"
+results<-NormalizeData(results, normalization.method = "CLR")
+
+FeaturePlot(results, features= c("CD3-TotalA","CD4-TotalA", "CD8-TotalA","CD45RA-TotalA","CD45RO-TotalA", "CD25-TotalA","CD69-TotalA","HLA-DR-DP-DQ-TotalA","CD185-TotalA", "CD279-TotalA", "TIGIT-TotalA", "CD62L-TotalA", "CD152-TotalA", "KLRG1-TotalA", "TCRVa7.2-TotalA","TCRVd2-TotalA", "TCRab-TotalA", "CX3CR1-TotalA","CD194-TotalA","CD196-TotalA" , "CD278-TotalA", "CD183-TotalA", "CD195-TotalA"), min.cutoff = 'q5', max.cutoff = 'q95', reduction="umap")
+DotPlot(results, features= c("CD3-TotalA","CD4-TotalA", "CD8-TotalA","CD45RA-TotalA","CD45RO-TotalA", "CD25-TotalA","CD69-TotalA","HLA-DR-DP-DQ-TotalA","CD185-TotalA", "CD279-TotalA", "TIGIT-TotalA", "CD62L-TotalA", "CD152-TotalA", "KLRG1-TotalA", "TCRVa7.2-TotalA","TCRVd2-TotalA", "TCRab-TotalA", "CX3CR1-TotalA","CD194-TotalA","CD196-TotalA" , "CD278-TotalA", "CD183-TotalA", "CD195-TotalA"))+theme(axis.text.x = element_text(vjust=0.4,angle = 90))
+```
+
+## RNA marker notes
+* RORC+CTSH weakly  in 0
+* CXCR5 across 0, 3, 4, 6, 13, 14
+* CCR7 across all but 5, 9, sorta 2, sorta 8 
+* SELL across all but 5/9/0 somewhat 
+* TCF7 across all except 5, 8, 9
+* TBX21 in 5, GZMB low  
+* FOXP3 +IL2RA in 8
+* CCL5 + GZMB + TBX21 in 9 
+* MKI67 + GZMK in 10 
+* CCR5 in 0/5
+* 12 no markers here 
+* MT - no specific pop
+* GATA3 highest in 11  
+* CCR7, SELL, TCF7 highest in 1 
+
+## Protein marker notes 
+
+Sub pop in 1 and cluster 9 both CD8+, cluster 5 mix of CD4 + CD8 
+Pop 1 is RA+, 5/9 have some RA positivity 
+Rest are RO positive or at least higher 
+CD69 no specific pop (cluster0 highest) 10/8 are higher in DR, 25, ICOS marking mostly 8 (in line with RNA_ )
+CXCR5+, CD62L, TCRVa7.2, d2, ab throughout - CXCR5 highest in 5, 
+PD1 high, tigit intermediate, CTLA4 and CX3CR1 maybe intermediate  in 11/7/6, CTLA4 - max in 10 
+5+9 KLRG1 high, also the max for 7.2/d/ 
+CXCR3 - 12
+CCR4 allover/10+7, CCR6 - cluster 6 
+CX3CR1 - 0,
+CCR5 - 6,11  
+
+## consensus annotation from most confident to least 
+
+* 8 - Treg 
+* 10 - Proliferating 
+* 9 - CD8 TEMRA 
+* 5 - effector_Th1_CD4_and_CD8
+* 1 - Naive T 
+* 4 - Naive T
+* 0 - polarized_effector_t
+* 7 - Exhausted memory 
+* 6 - Exhausted Th1 
+* 14 - CXCR5 memory 
+* 2 - Central Memory 
+* 3 - Memory
+* 13 - Memory
+* 12 - Naive T
+* 11 - Th2
+
+The annotations aren't perfect and they aren't particularly clean in many ways. It suggests that while we are having a good resolution on populations, there is not a perfect delineation captured by the clusters. Since we're reasonably interested in the proliferating cells and not many of the other populations at first blush, I suspect the correct choice is to accept the fuzzy labels and focus further in as needed based on ATAC annotation and module analysis. 
+
+```{r annotating, fig.width=16, fig.height=9}
+
+results$CD4anno<-case_when(results$CD4anno==8~"Treg", results$CD4anno==10~"Proliferating", results$CD4anno==9~"CD8_TEMRA",
+                   results$CD4anno==5~"Effector_Th1_CD4_and_CD8",results$CD4anno==1~"Naive_T_1",results$CD4anno==4~"Naive_T_2",
+                   results$CD4anno==0~"Polarized_Effector_T",results$CD4anno==7~"Exhausted_Memory",results$CD4anno==6~"Exhausted_Th1",
+                   results$CD4anno==14~"CXCR5_Memory", results$CD4anno==2~"Central_Memory", results$CD4anno==3~"Memory_T_1", results$CD4anno==12~"Naive_T_3", results$CD4anno==11~"Th2", results$CD4anno==13~"Memory_T_2", 
+                   )
+results$CD4anno<-factor(results$CD4anno, levels = c("Proliferating", "Treg","Polarized_Effector_T", "Exhausted_Th1", "Exhausted_Memory", "Effector_Th1_CD4_and_CD8", "CD8_TEMRA","Th2","CXCR5_Memory","Central_Memory", "Memory_T_1", "Memory_T_2", "Naive_T_1", "Naive_T_2", "Naive_T_3"  ))
+
+Idents(results)<-results$CD4anno
+
+DimPlot(results, label=TRUE)
+DimPlot(results, split.by = "CD4anno", ncol=3)
+DimPlot(results, split.by = "Participant", ncol=3)
+DimPlot(results, split.by = "Timepoint")
+DimPlot(results, split.by = "Treatment")
+DimPlot(results, split.by = "Cell.Source")
+
+
+
+saveRDS(results,"~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230529CD4ObjAnno.rds")
+
+```
+
+```{r session info}
+devtools::session_info()
+```

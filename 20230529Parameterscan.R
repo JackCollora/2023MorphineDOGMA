@@ -22,8 +22,9 @@ results$merged_clusters<-factor(results$merged_clusters, levels = c("Memory_CD4_
                                                                     "Naive_CD4_T_1","Naive_CD4_T_2","Naive_CD4_T_3","cDC","pDC","CD14+_Mono","Naive_B","Memory_B","Plasma"))
 
 Idents(results)<-results$merged_clusters
-DefaultAssay(results)<-"RNA"
 for (i in c(500, 1000, 1500, 2000, 3500, 5000)){
+DefaultAssay(results)<-"RNA"
+  
 results<-SplitObject(results, "orig.ident")
 results<-lapply(results, NormalizeData)
 results<-lapply(results, FindVariableFeatures, nfeatures = i)
@@ -53,7 +54,7 @@ results <- FindMultiModalNeighbors(
   results, reduction.list = list("mnn", "adt_harmony", "atac_harmony"), 
   dims.list = list(1:30, 1:18, 2:30), modality.weight.name = "RNA.weight"
 )
-
+results<-FindClusters(results, graph.name = "wsnn", algorithm = 3 )
 results <- RunUMAP(results, nn.name="weighted.nn")
 pdf(paste0("Parameterscan/","nfeature_",i,".pdf"))
 print(DimPlot(results, label=TRUE)+NoLegend())
@@ -63,6 +64,7 @@ dev.off()
 }
 
 for (i in c(10,20,30,40,50)){
+  DefaultAssay(results)<-"RNA"
   results<-SplitObject(results, "orig.ident")
   results<-lapply(results, NormalizeData)
   results<-lapply(results, FindVariableFeatures)
@@ -92,6 +94,7 @@ for (i in c(10,20,30,40,50)){
     results, reduction.list = list("mnn", "adt_harmony", "atac_harmony"), 
     dims.list = list(1:i, 1:i, 2:i), modality.weight.name = "RNA.weight"
   )
+  results<-FindClusters(results, graph.name = "wsnn", algorithm = 3 )
   
   results <- RunUMAP(results, nn.name="weighted.nn")
   pdf(paste0("Parameterscan/","nPCsint_",i,".pdf"))
@@ -102,6 +105,7 @@ for (i in c(10,20,30,40,50)){
 }
 
 for (i in c(5,10,20,30,50, 100)){
+  DefaultAssay(results)<-"RNA"
   results<-SplitObject(results, "orig.ident")
   results<-lapply(results, NormalizeData)
   results<-lapply(results, FindVariableFeatures)
@@ -121,7 +125,8 @@ for (i in c(5,10,20,30,50, 100)){
   results <- FindTopFeatures(results, min.cutoff = 20)
   results <- RunTFIDF(results)
   results <- RunSVD(results)
-  
+  results<-FindClusters(results, graph.name = "wsnn", algorithm = 3 )
+
   results<-RunHarmony(results,group.by.vars = "orig.ident", reduction.save="atac_harmony")
   
   
@@ -131,6 +136,7 @@ for (i in c(5,10,20,30,50, 100)){
     results, reduction.list = list("mnn", "adt_harmony", "atac_harmony"), 
     dims.list = list(1:30, 1:18, 2:30), modality.weight.name = "RNA.weight", k.nn=i
   )
+  results<-FindClusters(results, graph.name = "wsnn", algorithm = 3 )
   
   results <- RunUMAP(results, nn.name="weighted.nn", n.neighbors = i)
   pdf(paste0("Parameterscan/","nNeighbors_",i,".pdf"))
@@ -141,6 +147,7 @@ for (i in c(5,10,20,30,50, 100)){
 }
 
 for (i in c(5,10,20,30,50, 100)){
+  DefaultAssay(results)<-"RNA"
   results<-SplitObject(results, "orig.ident")
   results<-lapply(results, NormalizeData)
   results<-lapply(results, FindVariableFeatures)
@@ -170,6 +177,7 @@ for (i in c(5,10,20,30,50, 100)){
     results, reduction.list = list("mnn", "adt_harmony", "atac_harmony"), 
     dims.list = list(1:30, 1:18, 2:30), modality.weight.name = "RNA.weight"
   )
+  results<-FindClusters(results, graph.name = "wsnn", algorithm = 3 )
   
   results <- RunUMAP(results, nn.name="weighted.nn", local.connectivity = i)
   pdf(paste0("Parameterscan/","nConnectivity_",i,".pdf"))
