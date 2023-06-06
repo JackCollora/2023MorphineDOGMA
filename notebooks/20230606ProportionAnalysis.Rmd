@@ -1,0 +1,278 @@
+---
+title: "Proportion analysis"
+date: '2023-06-06'
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Proportion analysis 
+
+The objective of this analysis is to nominate clusters of interest based on their differences in proportion across individuals with respect to groups of interest. In this case, we'll be examining for clusters that are different between treatment groups at each timepoint and between each timepoint to see if any group of cells is perturbed. In this case, we just need the metadata since it includes cluster annotations. 
+
+```{r loading libraries and data}
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230518Completeobj.rds")
+
+#naming taken from the ADT notebook
+results$merged_clusters<-case_when(results$seurat_clusters==16~8,results$seurat_clusters==17~8, results$seurat_clusters==18~10,results$seurat_clusters==19~3,
+                                   results$seurat_clusters==20~4,results$seurat_clusters==21~6,results$seurat_clusters==22~2,results$seurat_clusters==23~2,
+                                   results$seurat_clusters==24~6, results$seurat_clusters==0~0,T~(as.numeric(results$seurat_clusters)-1))
+
+results$merged_clusters<-case_when(results$merged_clusters==0~"Naive_CD4_T_1",results$merged_clusters==1~"Memory_CD4_Polarized_1",results$merged_clusters==2~"Memory_CD4_Polarized_2",results$merged_clusters==3~"Memory_CD4_1",
+                                   results$merged_clusters==4~"Cytotoxic_T",results$merged_clusters==5~"Naive_B",results$merged_clusters==6~"Naive_CD4_T_2",results$merged_clusters==7~"Treg_proliferating",
+                                   results$merged_clusters==8~"Naive_CD4_T_3",results$merged_clusters==9~"NK",results$merged_clusters==10~"Memory_B",results$merged_clusters==11~"CD14+_Mono",
+                                   results$merged_clusters==12~"cDC",results$merged_clusters==13~"pDC",results$merged_clusters==14~"Memory_CD4_2",results$merged_clusters==15~"Plasma")
+
+results$merged_clusters<-factor(results$merged_clusters, levels = c("Memory_CD4_Polarized_1","Memory_CD4_Polarized_2","Treg_proliferating","Cytotoxic_T","NK","Memory_CD4_1","Memory_CD4_2",
+                                                                    "Naive_CD4_T_1","Naive_CD4_T_2","Naive_CD4_T_3","cDC","pDC","CD14+_Mono","Naive_B","Memory_B","Plasma"))
+
+meta<-results@meta.data
+```
+
+## Plotting by individual and treatment group 
+
+First objective is to see if there are any outliers across individuals. As you can see below there is variation, but only one outlier from one individual in the cytotoxic T cell cluster. We'll have to be mindful of this.
+
+We also find that across treatment groups, there is one cluster that is perturbed, and that's naive B cells in the methadone treatmnet group. This may suggest there's something different about those individuals. I have also plotted these data in two ways, a stacked bar (as is the fashion very often) and unstacked dot plots by individual or treatment. Observe how much easier it is to identify differences when you put them next to each other by cluster as opposed to by individual. 
+
+```{r General plotting, fig.width=16, fig.height=9}
+#first factoring some things to get the order consistent with treatment
+meta$Participant<-factor(meta$Participant, levels=c(5003, 5009, 5016, 5020, 5014, 5017, 5018, 5023, 5021, 5026, 5035, 5037))
+
+meta_tots_by_part<-group_by(meta, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+#this is the very basic plot that has everything normalized, it looks pretty but we know emperically its better to put each bar separately for comparison
+ggplot(meta_tots_by_part, aes(x=Participant, y=prop, fill=merged_clusters))+geom_col()
+
+#doing it like this separates things up by the participants, but we want them by clusters 
+ggplot(meta_tots_by_part, aes(x=Participant, y=prop, fill=merged_clusters))+geom_col(position="dodge")
+
+#doing it this way, we can see there is some variation by participants, but perhaps most interestingly is that the groups of 4 also have some variation, with Naive_B being semingly up in methadone, but its still hard to see because there are too many groups 
+#in general we'll know to be skeptical of Cyotoxic T as that's clearly a large outlier, but for the most part the outiers are not drastically different in other clusters. 
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=prop, fill=Participant))+geom_col(position="dodge")
+
+#repeating the above, but carrying through the treatment so we can group by that instead 
+#first factoring treatment to the order I want 
+meta$Treatment<-factor(meta$Treatment, levels = c("Methadone","Bup.Nalo","Naltrexone"))
+meta_tots_by_part<-group_by(meta, Treatment, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+#need to do an extra filter since the factor treatment is creating NAN columns. 
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+#added some extra visual variables since the plot could be useful. From this you cans ee the only major difference across groups is in Naive B cells, with all other groups heavily overlapping 
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=prop, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))
+
+#both are significant parametrically
+t.test(meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Methadone" & meta_tots_by_part$merged_clusters=="Naive_B"], meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Naltrexone" & meta_tots_by_part$merged_clusters=="Naive_B"])
+t.test(meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Methadone" & meta_tots_by_part$merged_clusters=="Naive_B"], meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Bup.Nalo" & meta_tots_by_part$merged_clusters=="Naive_B"])
+
+#and non parametrically
+wilcox.test(meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Methadone" & meta_tots_by_part$merged_clusters=="Naive_B"], meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Naltrexone" & meta_tots_by_part$merged_clusters=="Naive_B"])
+wilcox.test(meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Methadone" & meta_tots_by_part$merged_clusters=="Naive_B"], meta_tots_by_part$prop[meta_tots_by_part$Treatment=="Bup.Nalo" & meta_tots_by_part$merged_clusters=="Naive_B"])
+
+
+```
+
+## Plotting by treatment and timepoint 
+
+Now that we have this difference across treatment groups, we also want to see if things change across timepoints. We can do this two ways: 
+
+1. calculate a delta/fold change in each cluster between the two timepoints within an individual (1 datapoint per individual per cluster)
+2. Plot groups of cells as above but adding timepoint as a covariate (2 datapoints per individual per cluster)
+
+Option 1 is cleaner but has the potential to obscure outliers and variance, option 2 will be more messy (and thus harder to compare) but show the data more completely. 
+
+I do both below. 
+
+```{r timepoint analysis, fig.width=16, fig.height=9}
+
+#method 1, FC
+#first factoring timeppoint to the order I want 
+meta$Timepoint<-factor(meta$Timepoint, levels = c(0,3))
+
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+#need to do an extra filter since the factor treatment is creating NAN columns. 
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+
+#now we need to split by timepoint and calculate a ratio to plot
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","merged_clusters","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","merged_clusters","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","merged_clusters","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","merged_clusters") )
+meta_tots_by_part$FC<-meta_tots_by_part$prop3/meta_tots_by_part$prop
+
+#uncropped, we can see there are some outliers and some trends, with expansion of the myeloid compartment in methadone, but we need to get closer
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=FC, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))
+#from this its a little more clear that there are potential differences in the groups, but nothing looks like a smoking gun to test. We're going to need to try anova, but since we have so many more groups than samples it will be unlikely to pick anything up. Since Naive B are not different in terms of fold change here, it suggests that those invididuals were higher from that start 
+#methadone has higher in the meyloid compartmnet with postivie FC in all participants and all clusters except one cluster in one participant 
+#interestingly, the Treg proliferating cluster looks like it's on an upward trajectory as well but not for methadone only the others 
+#a publication ready version of this would probably want to clip the upper features 
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=FC, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+ylim(0,7)+geom_hline(yintercept = 1, linetype=3)
+#simple clip
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>6.5]<-6.5
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+ylim(0,7)+geom_hline(yintercept = 1, linetype=3)
+#first remove Inf values, setting them and nans to 1 because its often due to really low cell counts in those clusters
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-1
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-1
+
+twoway.anova<-aov(FC ~ Treatment * merged_clusters, meta_tots_by_part)
+#p value not signficant for the interaction term, does not justify followup testing 
+summary(twoway.anova)
+
+#method 2, all data
+meta$T_Tp<-paste(meta$Treatment, meta$Timepoint, sep = "_")
+meta$T_Tp<-factor(meta$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+
+meta_tots_by_part<-group_by(meta, T_Tp, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+#this one ends up being pretty interesting because we can actually see the changes, particularly negative ones. It might be good to log the fold change above to make it symmetric... 
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=prop, group=T_Tp, color=T_Tp))+geom_point(position=position_dodge(width = 0.75), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))
+
+
+
+#method 1 but symmetric via log transform
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+#need to do an extra filter since the factor treatment is creating NAN columns. 
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+
+#now we need to split by timepoint and calculate a ratio to plot
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","merged_clusters","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","merged_clusters","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","merged_clusters","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","merged_clusters") )
+meta_tots_by_part$FC<-log2(meta_tots_by_part$prop3/meta_tots_by_part$prop)
+
+#replotted with log scale on the Y, we can see more interesting features. Probably the best iteration so that we can see everything
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=FC, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")
+
+#simple clip
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>3]<-3
+meta_tots_by_part$clip[meta_tots_by_part$clip< -3]<- -3
+
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+
+
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-0
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-0
+
+twoway.anova<-aov(FC ~ Treatment * merged_clusters, meta_tots_by_part)
+#p value now significant on the transformed values, follow ups justified 
+summary(twoway.anova)
+
+#follow up comparisons 
+
+clusters<-names(table(meta_tots_by_part$merged_clusters))
+treatments<-names(table(meta_tots_by_part$Treatment))
+
+for(i in clusters){
+  for(j in 1:3){
+    if(j==3){
+      k=1
+    }else{
+      k=j+1
+    }
+    results<-t.test(meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[j]],meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[k]])
+    if(results$p.value<0.05){
+      print(i)
+      print(paste(treatments[j], "vs", treatments[k]))
+      print(results)
+    }
+  }
+}
+#from this, cytotoxic T, Naive_CD4_T_3, pDC, and CD14+ Mono are all different, nominating those for more careful analysis 
+
+#trying it nonparametrically now
+
+for(i in clusters){
+  for(j in 1:3){
+    if(j==3){
+      k=1
+    }else{
+      k=j+1
+    }
+    results<-wilcox.test(meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[j]],meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[k]])
+    if(results$p.value<0.05){
+      print(i)
+      print(paste(treatments[j], "vs", treatments[k]))
+      print(results)
+    }
+  }
+}
+#getting roughly the same for the wilcox test, with cytotoxic T, Naive_CD4_T_3, and CD14+ Mono, but also Naive CD4 T 1 being slightly different, and no pDCs 
+
+
+```
+
+# Conclusions 
+Based on this proportionality analysis, I would nominate these clusters for further investigation since they had different proportions across treatment groups and/or timepoints:
+1. cytotoxic T
+2. Naive_CD4_T_3
+3. CD14+ Mono
+4. Naive CD4 T 1
+5. pDCs 
+6. Naive B cells 
+
+Of note, this analysis is limited in terms of FDR correction since we have too small of an N for the proper test (wilcox) since we can't assume normality at this low of an N. 
+
+# Adendum
+Below is a further iteration of the final time point plotting but on the CD4. No differences in proportion were significant by ANOVA. Some populations may warrant further investigation if the above do not pan out, but at least for now it looks reasonable. 
+
+```{r CD4 plotting, fig.width=16, fig.height=9}
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230529CD4ObjAnno.rds")
+meta<-results@meta.data
+meta$Treatment<-factor(meta$Treatment, levels = c("Methadone","Bup.Nalo","Naltrexone"))
+
+
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, CD4anno, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+#need to do an extra filter since the factor treatment is creating NAN columns. 
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+
+#now we need to split by timepoint and calculate a ratio to plot
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","CD4anno","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","CD4anno","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","CD4anno","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","CD4anno") )
+meta_tots_by_part$FC<-log2(meta_tots_by_part$prop3/meta_tots_by_part$prop)
+
+#replotted with log scale on the Y, we can see more interesting features. Probably the best iteration so that we can see everything
+ggplot(meta_tots_by_part, aes(x=CD4anno, y=FC, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")
+
+#simple clip
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>3]<-3
+meta_tots_by_part$clip[meta_tots_by_part$clip< -3]<- -3
+
+ggplot(meta_tots_by_part, aes(x=CD4anno, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+
+
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-0
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-0
+
+twoway.anova<-aov(FC ~ Treatment * CD4anno, meta_tots_by_part)
+#p value not significant here
+summary(twoway.anova)
+
+
+```
+```{r session info}
+devtools::session_info()
+```
