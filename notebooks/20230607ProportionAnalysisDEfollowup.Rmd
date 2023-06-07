@@ -1,0 +1,326 @@
+---
+title: "Unbalanced Followup"
+author: "Jack Collora"
+date: '2023-06-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Analysis of key clusters different across groups
+
+In the proportion analysis from yesterday, we identified a more limited subset of clusters that are of interest. These suprisingly had very little overlap with the clusters we thought would be most impacted, but they are not entirely unreasonable. These are those clusters:
+
+1. Cytotoxic T
+2. Naive_CD4_T_3
+3. CD14+ Mono
+4. Naive CD4 T 1
+5. pDCs 
+6. Naive B cells 
+
+Although some of these were only in one comparison or the other, I want to do the pairwise comparisons to see what is consistently different and verify that they arent otherwise perturbed in other conditions. At the moment the anlysis will remain RNA focused, but I plan to include ADT as well. 
+
+```{r loading data and packages}
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+
+#this is the object post chromvar. Should be the last "checkpoint" object that analysis is plotted from. Contains annotations and all assays. 
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds")
+DefaultAssay(results)<-"RNA"
+```
+
+## Cyotoxic T
+
+From the detailed CD4 analysis, we know there are two subclusters here, but the individual clusters were not sufficiently different between groups so we'll analyze the overall cluster. 
+
+Functionally, this cluster appears dominated by effector T cells, with high levels of GZMB expression and high levels of CD8 protein (at least on a subset)
+
+```{r DE Cyotoxic, fig.width=16, fig.height=9}
+
+#on the whole, we see a modest number of genes different, but they are clearly immune related in particular directions, flagging this for GSEA 
+Naive_B_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+head(Naive_B_Meth_v_Nal)
+head(Naive_B_Bup.Nalo_v_Nal)
+head(Naive_B_Meth_v_Bup.Nalo)
+
+#the real show is looking at it by timepoint since this is what we actally identified it from 
+ Naive_B_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+ Naive_B_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+ Naive_B_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+
+#in this case we only see differences in the Bup.Nalo condition. However the difference in proportion is present in Naltrexone. Possible that there's a difference here between those groups and Naltrexone just at timepoint 3 or timepoint 1, or that Bup.Nalo has a unique profile. 
+head(Naive_B_Meth_3_v_0)
+head(Naive_B_Bup.Nalo_3_v_0)
+head(Naive_B_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+#at time three there are more differences in terms of raw numbers. 
+Naive_B_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+#this is also true for time 0 in 2/3 comparisons. Suggests we had an uneven start, and some level of this change is due to participant differences. 
+Naive_B_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+head(Naive_B_Meth_v_Nal_3)
+head(Naive_B_Bup.Nalo_v_Nal_3)
+head(Naive_B_Meth_v_Bup.Nalo_3)
+head(Naive_B_Meth_v_Nal_0)
+head(Naive_B_Bup.Nalo_v_Nal_0)
+head(Naive_B_Meth_v_Bup.Nalo_0)
+```
+
+Based on the above, it appears that there are differences in this celltype that start at time zero. I'll need to be careful to ensure whatever I find is not a preexisting difference in the participants. If I focus on time 0 vs time 3, there are few differences but I don't have that problem. 
+
+If there's time and interest, I could also attempt to regress out some of those diffeerences.  
+
+## Naive_CD4_T_3
+
+This population is not well defined, and it may be useful to do some further unbiased annotation at a later date, but it was differential in the proportion analysis. Surprisingly it also mirrors the expected treatment, suggesting changes here may be very relevant. 
+
+
+```{r DE Naive_CD4_T_3, fig.width=16, fig.height=9}
+
+#fewer gene differences, but they do appear to be immune related. Could be useful to see via GSEA
+Naive_T_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+head(Naive_T_Meth_v_Nal)
+head(Naive_T_Bup.Nalo_v_Nal)
+head(Naive_T_Meth_v_Bup.Nalo)
+
+#Now we're cooking with gas, these appear to have differences in activation! Some key transcription factors are also changed like ETS and ZEB that might be intersting at an ATAC level. 
+Naive_T_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+Naive_T_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+Naive_T_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+
+
+head(Naive_T_Meth_3_v_0)
+head(Naive_T_Bup.Nalo_3_v_0)
+head(Naive_T_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+#looks like there are larger numbers here different, could be meaninful but will need ot be mindful of it for my analysis in general. Surprisingly, we have greater effect sizes when comparing in a timepoint conscious manner than overall, suggesting there might be multiple signals here that are getting cancelled out, but it could also just be increased cell number. Might be worthwile to try a pseudobulk approach. 
+Naive_T_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+Naive_T_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+head(Naive_T_Meth_v_Nal_3)
+head(Naive_T_Bup.Nalo_v_Nal_3)
+head(Naive_T_Meth_v_Bup.Nalo_3)
+head(Naive_T_Meth_v_Nal_0)
+head(Naive_T_Bup.Nalo_v_Nal_0)
+head(Naive_T_Meth_v_Bup.Nalo_0)
+
+```
+
+There ended up being many interesting differential genes in this "Naive" cluster that suggests differences in effector function and activation across groups. Definately worth a closer look using GSEA, GO, and other exploratory analyses to see if we can define a specific geneset. 
+
+## CD14+ Mono
+
+Looking now at the CD14+ cluster. Generally speaking they look macrophage like. It's not exactly clear how macrophages might be impacted by moprhine or replacement therapy, but we'll see. Myeloid in general is lower in Bup.Nalo and expanding in the other treatments so this would be most interesting to look at. 
+
+```{r DE CD14 Mono, fig.width=16, fig.height=9}
+
+#Decent number of differentially expressed genes, suggesting there might be something here
+Mono_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+head(Mono_Meth_v_Nal)
+head(Mono_Bup.Nalo_v_Nal)
+head(Mono_Meth_v_Bup.Nalo)
+
+#Extreme differences here, but we might not have enough cells for significance by this method. Methadone has >1500 genes but none survive FDR correction. Needs something more robust, whether that's GSEA or pseudobulk analysis
+Mono_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+Mono_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+Mono_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+
+
+head(Mono_Meth_3_v_0)
+head(Mono_Bup.Nalo_3_v_0)
+head(Mono_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+#starting to see similar results across different cell types, suggests we might have a common effect that hits multiple celltypes, which may be interesting to investigate 
+
+Mono_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+Mono_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+head(Mono_Meth_v_Nal_3)
+head(Mono_Bup.Nalo_v_Nal_3)
+head(Mono_Meth_v_Bup.Nalo_3)
+head(Mono_Meth_v_Nal_0)
+head(Mono_Bup.Nalo_v_Nal_0)
+head(Mono_Meth_v_Bup.Nalo_0)
+```
+
+## Naive CD4 T 1
+
+Similar to cluster 3 of the same name, poorly defined, but different by props. Moves in a similar direction, so it's possible the naive compartment is more generally impacted by the three treatments. 
+```{r DE Naive 2 , fig.width=16, fig.height=9}
+
+#almost no differences here
+Naive_T_2_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+
+head(Naive_T_2_Meth_v_Nal)
+head(Naive_T_2_Bup.Nalo_v_Nal)
+head(Naive_T_2_Meth_v_Bup.Nalo)
+
+#very limited differences here as well except in Bup.Nalo, but those do appear interesting enough to follow up on 
+ Naive_T_2_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Naive_CD4_T_1", group.by = "Timepoint")
+ Naive_T_2_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Naive_CD4_T_1", group.by = "Timepoint")
+ Naive_T_2_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Naive_CD4_T_1", group.by = "Timepoint")
+
+
+head(Naive_T_2_Meth_3_v_0)
+head(Naive_T_2_Bup.Nalo_3_v_0)
+head(Naive_T_2_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+#greater differences here which is nice, but they dont appear interesting (lots of ribosomal)
+Naive_T_2_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+
+#several differences here as well, but suggestive of that differential start we see in the above clusters. 
+Naive_T_2_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+Naive_T_2_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_1", group.by = "Treatment")
+
+head(Naive_T_2_Meth_v_Nal_3)
+head(Naive_T_2_Bup.Nalo_v_Nal_3)
+head(Naive_T_2_Meth_v_Bup.Nalo_3)
+head(Naive_T_2_Meth_v_Nal_0)
+head(Naive_T_2_Bup.Nalo_v_Nal_0)
+head(Naive_T_2_Meth_v_Bup.Nalo_0)
+```
+##  pDCs  
+
+Was only identified in the t.test, but not the wilcox test, has very limited phenotypes below. 
+
+```{r DE  pDCs , fig.width=16, fig.height=9}
+
+#fewer differences in this cluster, some level of TNF signaling in Meth vs Nal  
+pDC_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "pDC", group.by = "Treatment")
+
+head(pDC_Meth_v_Nal)
+head(pDC_Bup.Nalo_v_Nal)
+head(pDC_Meth_v_Bup.Nalo)
+
+#the real show is looking at it by timepoint since this is what we actally identified it from 
+#there are some genes here, but they dont reach significnace, probably not worth following up on
+pDC_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "pDC", group.by = "Timepoint")
+pDC_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "pDC", group.by = "Timepoint")
+pDC_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "pDC", group.by = "Timepoint")
+
+
+head(pDC_Meth_3_v_0)
+head(pDC_Bup.Nalo_3_v_0)
+head(pDC_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+#few genes differential at time 3
+pDC_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "pDC", group.by = "Treatment")
+
+pDC_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "pDC", group.by = "Treatment")
+pDC_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "pDC", group.by = "Treatment")
+
+head(pDC_Meth_v_Nal_3)
+head(pDC_Bup.Nalo_v_Nal_3)
+head(pDC_Meth_v_Bup.Nalo_3)
+head(pDC_Meth_v_Nal_0)
+head(pDC_Bup.Nalo_v_Nal_0)
+head(pDC_Meth_v_Bup.Nalo_0)
+```
+
+## Naive B cells
+
+This celltype was hugely up in the methodone individuals but it did not appear to change between the timepoints. Suggests that there might not be anything to it. 
+
+```{r DE Naive B, fig.width=16, fig.height=9}
+
+#null difference 
+Naive_B_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Naive_B", group.by = "Treatment")
+
+head(Naive_B_Meth_v_Nal)
+head(Naive_B_Bup.Nalo_v_Nal)
+head(Naive_B_Meth_v_Bup.Nalo)
+
+#the real show is looking at it by timepoint since this is what we actally identified it from 
+ Naive_B_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Naive_B", group.by = "Timepoint")
+ Naive_B_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Naive_B", group.by = "Timepoint")
+ Naive_B_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Naive_B", group.by = "Timepoint")
+
+#effect size tiny, very few genes
+head(Naive_B_Meth_3_v_0)
+head(Naive_B_Bup.Nalo_3_v_0)
+head(Naive_B_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+#basically no differences here, should omit from further analysis 
+Naive_B_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Naive_B", group.by = "Treatment")
+
+Naive_B_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Naive_B", group.by = "Treatment")
+Naive_B_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Naive_B", group.by = "Treatment")
+
+head(Naive_B_Meth_v_Nal_3)
+head(Naive_B_Bup.Nalo_v_Nal_3)
+head(Naive_B_Meth_v_Bup.Nalo_3)
+head(Naive_B_Meth_v_Nal_0)
+head(Naive_B_Bup.Nalo_v_Nal_0)
+head(Naive_B_Meth_v_Bup.Nalo_0)
+```
+
+# conclusion 
+
+It appears worthwile to take these clusters into a more detailed analysis of their changes following opioid replacement therapy, as well as the changes between time 3 of each group to see if we can find anything that is different at time 3 that is not also upregulated at time 1 between groups. GO and GSEA are next for these populations. 
+  
+1. Cytotoxic T   
+2. Naive_CD4_T_3  
+3. CD14+ Mono  
+
+```{r session info}
+devtools::session_info()
+```

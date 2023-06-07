@@ -1,0 +1,130 @@
+---
+title: "UnbiasedMarkerTesting"
+author: "Jack Collora"
+date: '2023-06-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Find all markers for heatmapping and checking targetted genes of interest 
+
+Goal here is to just develop a nonbiased set of gene markers that can give readers a sense of the markers that are present in each cluster relative to the rest of those in the dataset. We don't do this in a condition concious matter, its just for orientation/annotation. 
+
+```{r loading data and packages}
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+
+#this is the object post chromvar. Should be the last "checkpoint" object that analysis is plotted from. Contains annotations and all assays. 
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds")
+DefaultAssay(results)<-"RNA"
+
+
+#borrowed from wes anderson color package
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+
+#modified to expand and put pairs of hues together for conditions
+BottleRocket3<-c("#fad510", "#e37c12", "#cb2314","#792a2d", "#273046", "#3b4357")
+```
+
+```{r Finding makers, fig.width=16, fig.height=9}
+
+#find the actual markers
+Markers<-FindAllMarkers(results, only.pos=TRUE)
+
+#filter out anything without a significant adjusted P 
+Markers<-Markers[Markers$p_val_adj<0.05,]
+#saving markers for a table eventually
+write.table("~/gibbs/DOGMAMORPH/Ranalysis/results/FindAllMakers.tsv",sep = "\t", row.names = FALSE, quote = FALSE)
+
+#subset to the top 12 markers per cluster, as there is usually some overlap
+top10<-group_by(Markers, cluster)%>%slice_max(avg_log2FC, n=12)%>%select(gene)
+#132 genes left out of target 160, probably unavoidable though 
+top10<-unique(top10$gene)
+
+#need to scale the data
+results<-ScaleData(results, features = top10)
+#generate the actual heatmap, clearly at least one population is very noisy here, it's the first group of cells in each case. They're probably obscuring some signals, but it does seem they are being roughly placed with other cells that look similar to themselves. If I were to guess I'd say they have high ambient RNA. 
+DoHeatmap(results, top10, disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+
+```
+
+This is a very standard plot. It is concerning that htere is a subset that's apparent in Memory CD4 Polarized 1 and Naive CD4 T 1 that clearly have some increased levels of myeloid genes, but it otherwise looks about as expected. 
+
+## checking morphine genes 
+
+Just want to see if the morphine receptor genes are different across groups. 
+
+```{r morph genes, fig.width=16, fig.height=9}
+
+
+opioid.genes<-c("OPRM1", "OGFR","OPRK1","OPRD1","OPRL1")
+
+#receptors are most highly expressed on the myeloid compartment for OGFR and OPRL1
+#OPRK1 and OPRD1 are not on any population. 
+#OPRM1 has expression aross T cell types, mainly CD4 surprisingly. 
+
+DotPlot(results, features = opioid.genes, split.by = "Treatment", cols = BottleRocket2[1:3])
+
+#generating the timepoint treatment columns and sorting appropriately
+results$T_Tp<-paste(results$Treatment, results$Timepoint, sep = "_")
+results$T_Tp<-factor(results$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+
+
+DotPlot(results, features = opioid.genes, split.by = "T_Tp", cols = BottleRocket3)
+
+
+#oks like OGFR is the real primary for myeloid cells. Doesn't appear to change between timepoints in any significant way in any of these populations. So I'd say these are probably unimpacted. Might be interesting to see if there are any highly correlated genes with these in the future. 
+VlnPlot(results, c("OGFR","OPRL1"), cols = BottleRocket3, group.by = "T_Tp", idents = "pDC")
+VlnPlot(results, c("OGFR","OPRL1"), cols = BottleRocket3, group.by = "T_Tp", idents = "cDC")
+VlnPlot(results, c("OGFR","OPRL1"), cols = BottleRocket3, group.by = "T_Tp", idents = "CD14+_Mono")
+
+#very hard to get a good sense from this alone. A very small subset actuall expresses so its not pushing things up. 
+VlnPlot(results, c("OPRM1"), cols = BottleRocket3, group.by = "T_Tp", idents = "Treg_proliferating")
+VlnPlot(results, c("OPRM1"), cols = BottleRocket3, group.by = "T_Tp", idents = "Memory_CD4_1")
+VlnPlot(results, c("OPRM1"), cols = BottleRocket3, group.by = "T_Tp", idents = "Naive_CD4_T_2")
+
+results<-ScaleData(results, features = opioid.genes)
+
+DoHeatmap(results, features = opioid.genes, cells = names(Idents(results))[grep("Treg_proliferating", Idents(results))], group.by = "T_Tp",disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+
+DoHeatmap(results, features = opioid.genes, cells = names(Idents(results))[grep("Memory_CD4_1", Idents(results))], group.by = "T_Tp",disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+
+DoHeatmap(results, features = opioid.genes, cells = names(Idents(results))[grep("Naive_CD4_T_2", Idents(results))], group.by = "T_Tp",disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+
+#no sig changes in any of these identified groups brought on by the treatment. 
+Treg_prof_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "Treg_proliferating", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Treg_prof_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "Treg_proliferating", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Treg_prof_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "Treg_proliferating", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+Memory_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "Memory_CD4_1", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Memory_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "Memory_CD4_1", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Memory_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "Memory_CD4_1", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+Naive_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "Naive_CD4_T_2", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Naive_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "Naive_CD4_T_2", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Naive_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "Naive_CD4_T_2", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+pDC_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "pDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+pDC_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "pDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+pDC_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "pDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+cDC_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "cDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+cDC_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "cDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+cDC_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "cDC", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+Mono_test<-FindMarkers(results, ident.1 = "Methadone_0", ident.2 = "Methadone_3", subset.ident = "CD14+_Mono", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Mono_test_1<-FindMarkers(results, ident.1 = "Bup.Nalo_0", ident.2 = "Bup.Nalo_3", subset.ident = "CD14+_Mono", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+Mono_test_2<-FindMarkers(results, ident.1 = "Naltrexone_0", ident.2 = "Naltrexone_3", subset.ident = "CD14+_Mono", features = opioid.genes, min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf, group.by = "T_Tp" )
+
+```
+# conclusion
+We have well defined populations based on the DE between clusters. We do not have differences in morphine receptor expression, but we might be able to find something in the ATAC. 
+
+```{r session info}
+devtools::session_info()
+```
