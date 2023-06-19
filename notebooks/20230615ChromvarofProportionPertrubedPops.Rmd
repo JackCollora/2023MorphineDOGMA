@@ -1,0 +1,217 @@
+---
+title: "Chromvar Analysis"
+author: "Jack Collora"
+date: "2023-06-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Chromvar analysis
+
+Goal is to identify transcription factor acitivies that are different across conditions that may correlate with our treatment conditions. 
+
+One thing that occurs to me in this analysis is that I may want to use the higher resolution annotations from the "CD4" annotation rather than relying on the all cells annotation. Will repeat at a later date along with prop analysis. 
+```{r load data and packages }
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(patchwork))
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds")
+DefaultAssay(results)<-"chromvar"
+```
+
+```{r fix motif}
+
+FixMotifID<-function(markeroutput, seuratobj){
+  markeroutput$genes<-ConvertMotifID(seuratobj, assay="ATAC", id=rownames(markeroutput))
+  return(markeroutput)
+}
+
+
+```
+
+##Cytotoxic T cells
+
+Interesting differences here in JunFos and Eomes that warrant further looks. 
+
+```{r cytotoxic}
+Cyotoxic_T_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+Cyotoxic_T_Meth_v_Nal<-FixMotifID(Cyotoxic_T_Meth_v_Nal, results)
+Cyotoxic_T_Bup.Nalo_v_Nal<-FixMotifID(Cyotoxic_T_Bup.Nalo_v_Nal, results)
+Cyotoxic_T_Meth_v_Bup.Nalo<-FixMotifID(Cyotoxic_T_Meth_v_Bup.Nalo, results)
+
+
+#differences seen here seem to be mostly housekeeping, this is the hard one to look at anyways 
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Bup.Nalo_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Bup.Nalo)
+
+#the real show is looking at it by timepoint since this is what we actally identified it from 
+Cyotoxic_T_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+Cyotoxic_T_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+Cyotoxic_T_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Cytotoxic_T", group.by = "Timepoint")
+
+Cyotoxic_T_Meth_3_v_0<-FixMotifID(Cyotoxic_T_Meth_3_v_0, results)
+Cyotoxic_T_Bup.Nalo_3_v_0<-FixMotifID(Cyotoxic_T_Bup.Nalo_3_v_0, results)
+Cyotoxic_T_Nal_3_v_0<-FixMotifID(Cyotoxic_T_Nal_3_v_0, results)
+
+#Bup.Nalo has some interesting changes here, looks liekk they're mabye losing some effector profile. JunFos also different in Nalo, methadone shows nothing which is interesting 
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Bup.Nalo_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+
+#interesting Jun Fos changes at time 3, though some of those also occur at time zero. Might be a shift of dimers which could be interesting. 
+Cyotoxic_T_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+Cyotoxic_T_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+Cyotoxic_T_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Cytotoxic_T", group.by = "Treatment")
+
+Cyotoxic_T_Meth_v_Nal_3<-FixMotifID(Cyotoxic_T_Meth_v_Nal_3, results)
+Cyotoxic_T_Bup.Nalo_v_Nal_3<-FixMotifID(Cyotoxic_T_Bup.Nalo_v_Nal_3, results)
+Cyotoxic_T_Meth_v_Bup.Nalo_3<-FixMotifID(Cyotoxic_T_Meth_v_Bup.Nalo_3, results)
+
+Cyotoxic_T_Meth_v_Nal_0<-FixMotifID(Cyotoxic_T_Meth_v_Nal_0, results)
+Cyotoxic_T_Bup.Nalo_v_Nal_0<-FixMotifID(Cyotoxic_T_Bup.Nalo_v_Nal_0, results)
+Cyotoxic_T_Meth_v_Bup.Nalo_0<-FixMotifID(Cyotoxic_T_Meth_v_Bup.Nalo_0, results)
+
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Bup.Nalo_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Bup.Nalo_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Bup.Nalo_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Cyotoxic_T_Meth_v_Bup.Nalo_0)
+
+```
+
+## Naive_CD4_T_3
+
+limited differences in this population mainly in SPI factors. Not worth following up on as such. 
+
+
+```{r DE Naive_CD4_T_3, fig.width=16, fig.height=9}
+
+#fewer gene differences, but they do appear to be immune related. Could be useful to see via GSEA
+Naive_T_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+Naive_T_Meth_v_Nal<-FixMotifID(Naive_T_Meth_v_Nal, results)
+Naive_T_Bup.Nalo_v_Nal<-FixMotifID(Naive_T_Bup.Nalo_v_Nal, results)
+Naive_T_Meth_v_Bup.Nalo<-FixMotifID(Naive_T_Meth_v_Bup.Nalo, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Bup.Nalo_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Bup.Nalo)
+
+#Now we're cooking with gas, these appear to have differences in activation! Some key transcription factors are also changed like ETS and ZEB that might be intersting at an ATAC level. 
+Naive_T_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+Naive_T_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+Naive_T_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "Naive_CD4_T_3", group.by = "Timepoint")
+
+Naive_T_Meth_3_v_0<-FixMotifID(Naive_T_Meth_3_v_0, results)
+Naive_T_Bup.Nalo_3_v_0<-FixMotifID(Naive_T_Bup.Nalo_3_v_0, results)
+Naive_T_Nal_3_v_0<-FixMotifID(Naive_T_Nal_3_v_0, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Bup.Nalo_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Nal_3_v_0)
+
+
+#trying just comparing the time 0 and time 3 comparison
+
+Naive_T_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+Naive_T_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+Naive_T_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "Naive_CD4_T_3", group.by = "Treatment")
+
+Naive_T_Meth_v_Nal_3<-FixMotifID(Naive_T_Meth_v_Nal_3, results)
+Naive_T_Bup.Nalo_v_Nal_3<-FixMotifID(Naive_T_Bup.Nalo_v_Nal_3, results)
+Naive_T_Meth_v_Bup.Nalo_3<-FixMotifID(Naive_T_Meth_v_Bup.Nalo_3, results)
+Naive_T_Meth_v_Nal_0<-FixMotifID(Naive_T_Meth_v_Nal_0, results)
+Naive_T_Bup.Nalo_v_Nal_0<-FixMotifID(Naive_T_Bup.Nalo_v_Nal_0, results)
+Naive_T_Meth_v_Bup.Nalo_0<-FixMotifID(Naive_T_Meth_v_Bup.Nalo_0, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Bup.Nalo_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Bup.Nalo_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Bup.Nalo_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Naive_T_Meth_v_Bup.Nalo_0)
+
+```
+
+## CD14 Mono
+
+Jun::FOS comes up here as well, but there are also relatively few difference and its unlikely to be worth following up. 
+
+```{r DE CD14 Mono, fig.width=16, fig.height=9}
+
+Mono_Meth_v_Nal<-FindMarkers(results, "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal<-FindMarkers(results, "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo<-FindMarkers(results, "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+Mono_Meth_v_Nal<-FixMotifID(Mono_Meth_v_Nal, results)
+Mono_Bup.Nalo_v_Nal<-FixMotifID(Mono_Bup.Nalo_v_Nal, results)
+Mono_Meth_v_Bup.Nalo<-FixMotifID(Mono_Meth_v_Bup.Nalo, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Bup.Nalo_v_Nal)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Bup.Nalo)
+
+Mono_Meth_3_v_0<-FindMarkers(subset(results, Treatment=="Methadone"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+Mono_Bup.Nalo_3_v_0<-FindMarkers(subset(results, Treatment=="Bup.Nalo"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+Mono_Nal_3_v_0<-FindMarkers(subset(results, Treatment=="Naltrexone"), 3,0,subset.ident = "CD14+_Mono", group.by = "Timepoint")
+
+Mono_Meth_3_v_0<-FixMotifID(Mono_Meth_3_v_0, results)
+Mono_Bup.Nalo_3_v_0<-FixMotifID(Mono_Bup.Nalo_3_v_0, results)
+Mono_Nal_3_v_0<-FixMotifID(Mono_Nal_3_v_0, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Bup.Nalo_3_v_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Nal_3_v_0)
+
+
+Mono_Meth_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal_3<-FindMarkers(subset(results, Timepoint==3), "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo_3<-FindMarkers(subset(results, Timepoint==3), "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+Mono_Meth_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Bup.Nalo_v_Nal_0<-FindMarkers(subset(results, Timepoint==0), "Bup.Nalo","Naltrexone",subset.ident = "CD14+_Mono", group.by = "Treatment")
+Mono_Meth_v_Bup.Nalo_0<-FindMarkers(subset(results, Timepoint==0), "Methadone","Bup.Nalo",subset.ident = "CD14+_Mono", group.by = "Treatment")
+
+Mono_Meth_v_Nal_3<-FixMotifID(Mono_Meth_v_Nal_3, results)
+Mono_Bup.Nalo_v_Nal_3<-FixMotifID(Mono_Bup.Nalo_v_Nal_3, results)
+Mono_Meth_v_Bup.Nalo_3<-FixMotifID(Mono_Meth_v_Bup.Nalo_3, results)
+Mono_Meth_v_Nal_0<-FixMotifID(Mono_Meth_v_Nal_0, results)
+Mono_Bup.Nalo_v_Nal_0<-FixMotifID(Mono_Bup.Nalo_v_Nal_0, results)
+Mono_Meth_v_Bup.Nalo_0<-FixMotifID(Mono_Meth_v_Bup.Nalo_0, results)
+
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Bup.Nalo_v_Nal_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Bup.Nalo_3)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Bup.Nalo_v_Nal_0)
+DT::datatable(rownames=FALSE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Mono_Meth_v_Bup.Nalo_0)
+```
+
+```{r session info}
+devtools::session_info()
+```

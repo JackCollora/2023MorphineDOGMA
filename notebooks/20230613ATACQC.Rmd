@@ -1,0 +1,171 @@
+---
+title: "ATAC-seq QC"
+author: "Jack Collora"
+date: "2023-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ATAC-seq QC
+
+The objective of this document is to evaluate the QC metrics of this dataset with respect to the ATAC-seq assay. These have already QCed relatively well by Archr, so this is going to be an analysis to confirm the datasets are high quality and that certain marker genes have expected phenotypes. 
+
+```{r load data and packages }
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(patchwork))
+
+
+```
+
+## Sequencing QC metrics 
+
+These are metrics we can calculate based on the sequencing alignments and our known gene annotations. Breifly they are: 
+
+Nucleosome signal - ratio of fragments greater than nucleosomal length (147) to less than nucleosomal length. Generally you want this to be low, since smaller fragments are TF bindings. 
+TSS enrichment - how many reads come from TSS. Typically you want this to be higher as TSS should be enriched for acessible regions. 
+Blacklist fraction - What portion of reads fall in sequencing regions that are overrepresented (i.e. artifact or high in low quality)
+
+
+```{r QC metrics, fig.width=16, fig.height=9}
+
+#ran this section interactively since it causes markdown issues. 
+
+#nucleosomal signal, not looked at in archr  
+#results<-NucleosomeSignal(results)
+#Tss signaal, used a pretty permissive cutoff there, but most cells have been removed due to RNA cutoffs  
+#results <- TSSEnrichment(results)
+
+#we're skiping FRiP since we already know it's decent here both based on 10X QC but also ArchR
+#blacklist
+#results$blacklist_fraction <- FractionCountsInRegion( object = results, assay = 'ATAC', regions = blacklist_hg38)
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230613ATACQCObj.rds")
+
+
+#no cluster or individual Fragment histogram differences
+FragmentHistogram(results)
+FragmentHistogram(results, group.by = "orig.ident")
+
+#cDC clearly bimodal
+VlnPlot(results, "nCount_ATAC",pt.size = 0)
+#PBMC lower (4,7,10)
+VlnPlot(results, "nCount_ATAC",pt.size = 0, group.by = "orig.ident")
+
+#similar observations for number of ATAC peaks obseved 
+VlnPlot(results, "nFeature_ATAC",pt.size = 0)
+VlnPlot(results, "nFeature_ATAC",pt.size = 0, group.by = "orig.ident")
+
+
+#myeloid a little different
+VlnPlot(results, "TSS.enrichment",pt.size = 0)
+#JC4 a little lower
+VlnPlot(results, "TSS.enrichment",pt.size = 0, group.by = "orig.ident")
+
+#neigther are crazy, blacklist is basically null, which make sense since we filtered it in ArchR
+VlnPlot(results, "blacklist_fraction",pt.size = 0)
+VlnPlot(results, "blacklist_fraction",pt.size = 0, group.by = "orig.ident")
+
+VlnPlot(results, "nucleosome_signal",pt.size = 0)
+#library level heterogeneity, but generally values are low here, suggests we're fine
+VlnPlot(results, "nucleosome_signal",pt.size = 0, group.by = "orig.ident")
+
+
+
+
+```
+
+Based on the above results, there appears to be differences in the QC between PBMC and CD4 libraries, and a larger number of fragments in certain myeloid populations, but overall the libraries look good as expected based on archr. 
+
+## Marker gene inspection 
+
+The purpose here is to just check that we see cell specific differences for marker genes in chromatin accessibility. Below appears to show that we have good chromatin alignment with RNA based marker definition.
+
+```{r marker genes, fig.width=16, fig.height=9}
+
+#looks in 
+
+CoveragePlot(results,region = "BCL11B", features = "BCL11B", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+
+CoveragePlot(results,region = "NKG7", features = "NKG7", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+CoveragePlot(results,region = "CD3E", features = "CD3E", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+             
+CoveragePlot(results,region = "MS4A1", features = "MS4A1", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+CoveragePlot(results,region = "LEF1", features = "LEF1", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+CoveragePlot(results,region = "TREM1", features = "TREM1", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+CoveragePlot(results,region = "LYZ", features = "LYZ", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+             
+
+
+CoveragePlot(results,region = "IL7R", features = "IL7R", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "CCR7", features = "CCR7", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "CD14", features = "CD14", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "CD8A", features = "CD8A", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "FCGR3A", features = "FCGR3A", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "MS4A7", features = "MS4A7", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "GNLY", features = "GNLY", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "FCER1A", features = "FCER1A", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "CST3", features = "CST3", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "PPBP", features = "PPBP", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+
+#some TFs, low signal possibly because these are diluted 
+CoveragePlot(results,region = "FOXP3", features = "FOXP3", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "RORC", features = "RORC", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "GATA3", features = "GATA3", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+CoveragePlot(results,region = "TBX21", features = "TBX21", 
+             expression.assay="RNA", 
+             extend.upstream = 10000, extend.downstream = 10000)
+```
+
+```{r session info}
+devtools::session_info()
+```
