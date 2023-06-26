@@ -170,6 +170,6 @@ results$clusteranno<-case_when(!is.na(results$CD4anno)~as.character(results$CD4a
 
 results$clusteranno<-factor(results$clusteranno, levels = unlist(c(levels(results$CD4anno), levels(results$merged_clusters))))
 Idents(results)<-results$clusteranno
-DimPlot(results)
+DimPlot(results, label = TRUE)
 
 saveRDS(results, "gibbs/DOGMAMORPH/Ranalysis/Objects/202306192023FinalClusternames.rds")
