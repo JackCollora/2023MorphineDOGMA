@@ -189,6 +189,9 @@ sum((results$HIV_reads_RNA>1)|(results$HIV_reads_ATAC>1))
 #5 cells with both
 sum((results$HIV_reads_RNA>1)&(results$HIV_reads_ATAC>1))
 
+
+#doing some basic RNA DE 
+DefaultAssay(results)<-"RNA"
 Idents(results)<-results$HIV_reads_ATAC>1
 marks_ATAC<-FindMarkers(results, TRUE, FALSE)
 Idents(results)<-results$HIV_reads_RNA>1
@@ -204,3 +207,10 @@ Idents(results.sub)<-results.sub$HIV_reads_RNA>1
 marks_RNA.sub<-FindMarkers(results.sub, TRUE, FALSE)
 Idents(results.sub)<-(results.sub$HIV_reads_RNA>1)|(results.sub$HIV_reads_ATAC>1)
 marks_either.sub<-FindMarkers(results.sub, TRUE, FALSE)
+
+table((results$HIV_reads_RNA>1)|(results$HIV_reads_ATAC>1), results$Participant)
+table((results$HIV_reads_RNA>1), results$Participant)
+table((results$HIV_reads_ATAC>1), results$Participant)
+
+table((results$HIV_reads_RNA>1)|(results$HIV_reads_ATAC>1), results$Timepoint)
+table((results$HIV_reads_RNA>1)|(results$HIV_reads_ATAC>1), results$Treatment)

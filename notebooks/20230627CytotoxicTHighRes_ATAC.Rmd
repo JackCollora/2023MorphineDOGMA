@@ -1,0 +1,119 @@
+---
+title: "CytotoxicTHighRes_ATAC"
+author: "Jack Collora"
+date: "2023-06-27"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Analysis objectives 
+Determine if there are ATAC-seq differences across conditions and timepoints. 
+
+Spoiler there isn't. 
+
+
+```{r loading}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds") 
+DefaultAssay(results)<-"ATAC"
+results$T_Tp<-paste(results$Treatment, results$Timepoint, sep = "_")
+results$T_Tp<-factor(results$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+results_cyto<-subset(results, merged_clusters=="Cytotoxic_T")
+Idents(results_cyto)<-results_cyto$T_Tp
+
+```
+
+## Differential accessibility 
+
+Goal here is to look for peaks that are different across conditions to see if we can find epigenetic changes/priming differences that are relevant in these treatments 
+
+### same condition across timepoint 
+
+First we'll try each condition across time. There are none different across. 
+
+
+```{r methadone Bup.Nalo Nalt}
+#none significant in any comp
+Methadone_3_vs_0 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Methadone_3',
+  ident.2 = 'Methadone_0',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+
+Bup.Nalo_3_vs_0 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Bup.Nalo_3',
+  ident.2 = 'Bup.Nalo_0',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+
+Nalt_3_vs_0 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Naltrexone_3',
+  ident.2 = 'Naltrexone_0',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+
+```
+
+
+
+### Across conditons at tp 3
+
+Now we're looking at the DE peaks all after treatment, there is 1 different in two comparisons, i.e. no difference. 
+
+```{r methadone Bup.Nalo Nalt each other}
+#0 DE peaks
+Methadone_3_vs_Bup.Nalo3 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Methadone_3',
+  ident.2 = 'Bup.Nalo_3',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+#1 DE peak
+Bup.Nalo_3_vs_Nalt_3 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Bup.Nalo_3',
+  ident.2 = 'Naltrexone_3',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+#1 DE peak 
+Nalt_3_vs_meth_3 <- FindMarkers(
+  object = results_cyto,
+  ident.1 = 'Naltrexone_3',
+  ident.2 = 'Methadone_3',
+  only.pos = TRUE,
+  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+
+
+```
+
+
+```{r session info}
+devtools::session_info()
+```
