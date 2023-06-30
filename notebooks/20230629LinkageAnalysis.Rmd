@@ -1,0 +1,80 @@
+---
+title: "Differential peak-gene linkage analysis"
+author: "Jack Collora"
+date: "2023-06-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objectives 
+
+I want to determine if there is any change in the peak-gene linkage for differentially expressed genes across conditions. While the target genes are going to be primarily from the cytotoxic data, I do want to check all the populations to see if its a more common thing. 
+
+```{r loading}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230628Linkpeakobj.rds")
+
+```
+
+## making the plotting function which will look at each of the individual conditions separately 
+
+```{r building multifunction, fig.height=18, fig.width=48}
+
+#specifically made this for my morphine stuff, if someone else uses it in the future they should pay attention to the number of plots and the order. There are ways to make it more general but I opted to make it as close to what I need as possible
+
+PlotLinked<-function(objlist, gene,idents.plot=c(""), up=10000, down=10000, expression.assay="RNA", assay="ATAC" ){
+  if(idents.plot[[1]]==""){idents.plot<-names(table(Idents(objlist[[1]])))}
+  p1<-CoveragePlot(objlist[[3]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  p2<-CoveragePlot(objlist[[4]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  p3<-CoveragePlot(objlist[[1]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  p4<-CoveragePlot(objlist[[2]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  p5<-CoveragePlot(objlist[[5]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  p6<-CoveragePlot(objlist[[6]], region=gene, features=gene, extend.downstream = down, extend.upstream = up, assay = assay,expression.assay = expression.assay, idents = idents.plot)
+  return((p1+p2)/(p3+p4)/(p5+p6)+ patchwork::plot_layout(nrow = 3, byrow = FALSE) )
+}
+
+PlotLinked(results, gene = "CD4")
+
+```
+
+```{r plot morphine, fig.height=18, fig.width=48}
+PlotLinked(results,"OPRM1", up = 1e5, down = 1e5 )
+PlotLinked(results,"OGFR", up = 1e5, down = 1e5 )
+
+```
+
+## selecting a few key genes that are upregulated paritcularly in the cyotoxic T and looking in just those populations
+
+```{r plot other interestng genes cyto only, fig.height=18, fig.width=48}
+PlotLinked(results,"IFI44L", up = 1e5, down = 1e5, idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"PLCG2", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"BRD1", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"AKT3", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"CCL5", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"SPOCK2", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"NKG7", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+
+```
+
+```{r plot other interestng genes all, fig.height=18, fig.width=48}
+PlotLinked(results,"IFI44L", up = 1e5, down = 1e5)
+PlotLinked(results,"PLCG2", up = 1e5, down = 1e5)
+PlotLinked(results,"BRD1", up = 1e5, down = 1e5)
+PlotLinked(results,"AKT3", up = 1e5, down = 1e5)
+PlotLinked(results,"CCL5", up = 1e5, down = 1e5)
+PlotLinked(results,"SPOCK2", up = 1e5, down = 1e5)
+PlotLinked(results,"NKG7", up = 1e5, down = 1e5  )
+
+```
+
+```{r session info}
+devtools::session_info()
+```
