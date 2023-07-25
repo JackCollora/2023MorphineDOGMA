@@ -39,7 +39,7 @@ Markers<-FindAllMarkers(results, only.pos=TRUE)
 #filter out anything without a significant adjusted P 
 Markers<-Markers[Markers$p_val_adj<0.05,]
 #saving markers for a table eventually
-write.table("~/gibbs/DOGMAMORPH/Ranalysis/results/FindAllMakers.tsv",sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(Markers,"~/gibbs/DOGMAMORPH/Ranalysis/results/FindAllMakers.tsv",sep = "\t", row.names = FALSE, quote = FALSE)
 
 #subset to the top 12 markers per cluster, as there is usually some overlap
 top10<-group_by(Markers, cluster)%>%slice_max(avg_log2FC, n=12)%>%select(gene)

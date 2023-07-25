@@ -172,6 +172,19 @@ results@meta.data<-select(results@meta.data, -trash)
 results$clusteranno<-case_when(!is.na(results$CD4anno)~as.character(results$CD4anno), TRUE ~ as.character(results$merged_clusters))
 
 results$clusteranno<-factor(results$clusteranno, levels = unlist(c(levels(results$CD4anno), levels(results$merged_clusters))))
+
+#fixing names and levels of these to make ready for figures
+
+clus<-gsub("_CD4","T", results$merged_clusters)
+clus<-gsub("T_T","T", clus)
+clus<-gsub("_T","T", clus)
+clus<-gsub("\\+","", clus)
+
+results$merged_clusters<-clus
+
+results$merged_clusters<-factor(results$merged_clusters, levels = c("Treg_proliferating", "MemoryT_Polarized_1", "MemoryT_Polarized_2", "MemoryT_1", "MemoryT_2",
+                                                                    "NaiveT_1", "NaiveT_2", "NaiveT_3", "CytotoxicT", "NK", "Memory_B", "Naive_B", "Plasma", "CD14_Mono",
+                                                                    "cDC", "pDC" ) )
 Idents(results)<-results$clusteranno
 DimPlot(results, label = TRUE)
 

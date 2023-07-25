@@ -75,6 +75,37 @@ PlotLinked(results,"NKG7", up = 1e5, down = 1e5  )
 
 ```
 
+```{r plot jun fos cyto only, fig.height=18, fig.width=48}
+PlotLinked(results,"JUN", up = 1e5, down = 1e5, idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+PlotLinked(results,"FOS", up = 1e5, down = 1e5 , idents.plot = c("Effector_Th1_CD4_and_CD8","CD8_TEMRA") )
+
+
+  ```
+
+```{r plot jun fos all, fig.height=18, fig.width=48}
+PlotLinked(results,"JUN", up = 1e5, down = 1e5)
+PlotLinked(results,"FOS", up = 1e5, down = 1e5)
+
+```
+
+```{r linking motifs to peak-gene linkages}
+
+AddMotifLinks<-function(seuratobj){
+  links<-data.frame(seuratobj@assays$ATAC@links)
+  motifs<-seuratobj@assays$ATAC@motifs@data
+  colnames(motifs)<-seuratobj@assays$ATAC@motifs@motif.names
+  motifs<-data.frame(motifs)
+  motifs<-motifs[links$peak,]
+  motifs<-motifs[,colSums(motifs)>1]
+  motifs$peak<-rownames(motifs)
+  links<-merge(links, motifs, all.X=TRUE, by.X="peak", by.Y="peak")
+  
+}
+
+test<-AddMotifLinks(results[[2]])
+
+```
+
 ```{r session info}
 devtools::session_info()
 ```
