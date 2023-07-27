@@ -1,0 +1,230 @@
+---
+title: "Dataset characteristics"
+author: "Jack Collora"
+date: "2023-07-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading, echo=FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230626FinalClusternames.rds")
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+BottleRocket3<-c("#fad510", "#e37c12", "#cb2314","#792a2d", "#273046", "#3b4357")
+
+```
+
+# Cluster characteristics, mophine treatment differences, and morphine receptor expression 
+
+## Figure 1A-E Cluster specific markers, UMAP, morphine receptor expression, heatmap 
+
+```{r umaps markers and morphine, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
+
+DefaultAssay(results)<-"RNA"
+Idents(results)<-results$merged_clusters
+
+DimPlot(results, label = TRUE)+NoLegend()
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/A.pdf", width = 16, height = 9)
+DimPlot(results, label = TRUE)+NoLegend()
+dev.off()->.
+
+
+Markers<-FindAllMarkers(results, only.pos=TRUE)
+
+#filter out anything without a significant adjusted P 
+Markers<-Markers[Markers$p_val_adj<0.05,]
+#saving markers for a table eventually
+write.table(Markers,"~/gibbs/DOGMAMORPH/Ranalysis/results/FindAllMakers.tsv",sep = "\t", row.names = FALSE, quote = FALSE)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Markers, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','Cluster markers'))
+
+top10<-group_by(Markers, cluster)%>%slice_max(avg_log2FC, n=12)%>%select(gene)
+top10<-unique(top10$gene)
+results<-ScaleData(results, features = top10)
+
+DoHeatmap(results, top10, disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/B.pdf", width = 16, height = 9)
+DoHeatmap(results, top10, disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+dev.off()->.
+
+Idents(results)<-factor(results$merged_clusters, levels = rev(levels(results$merged_clusters)))
+
+#RNA markers dotplot
+
+RNA.marks<-c("CD3D","CD4","FOXP3", "IL2RA","MKI67","GATA3", "CTSH", "CCR7", "SELL", "TCF7", "IL7R", "CD8A","GZMB", "CCL5", "TBX21", "GNLY","NKG7","MS4A1","CST3","LYZ","S100A4","FCER1A","MS4A7", "FCGR3A")
+DotPlot(results, features= RNA.marks) + theme(axis.text.x = element_text(angle = 90))
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/C.pdf", width = 16, height = 9)
+DotPlot(results, features= RNA.marks) + theme(axis.text.x = element_text(angle = 90))
+dev.off()->.
+
+
+#ADT markers dotplot
+DefaultAssay(results)<-"ADT"
+results<-NormalizeData(results, normalization.method = "CLR")
+
+protein.marks<-c("CD3-TotalA","CD4-TotalA","CD25-TotalA","CD45RO-TotalA", "CD45RA-TotalA", "HLA-DR-DP-DQ-TotalA", "CD279-TotalA","TIGIT-TotalA", "KLRG1-TotalA","CX3CR1-TotalA","CD194-TotalA","CD196-TotalA","CD8-TotalA", "CD56-TotalA","NKp80-TotalA", "CD19-TotalA","IgD-TotalA","CD27-TotalA", "CD11b-TotalA","CD11c-TotalA", "CD86-TotalA","CD1c-TotalA", "CD123-TotalA")
+DotPlot(results, features= protein.marks) + theme(axis.text.x = element_text(angle = 90))
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/D.pdf", width = 16, height = 9)
+DotPlot(results, features= protein.marks) + theme(axis.text.x = element_text(angle = 90))
+dev.off()->.
+
+
+
+```
+
+## Figure 1F Cluster imbalance in treatment 
+
+```{r fold change over time, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
+Idents(results)<-results$merged_clusters
+meta<-results@meta.data
+meta$Timepoint<-factor(meta$Timepoint, levels = c(0,3))
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","merged_clusters","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","merged_clusters","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","merged_clusters","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","merged_clusters") )
+meta_tots_by_part$FC<-log2(meta_tots_by_part$prop3/meta_tots_by_part$prop)
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>3]<-3
+meta_tots_by_part$clip[meta_tots_by_part$clip< -3]<- -3
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-0
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-0
+
+twoway.anova<-aov(FC ~ Treatment * merged_clusters, meta_tots_by_part)
+#p value now significant on the transformed values, follow ups justified 
+summary(twoway.anova)
+
+#follow up comparisons 
+
+clusters<-names(table(meta_tots_by_part$merged_clusters))
+treatments<-names(table(meta_tots_by_part$Treatment))
+
+for(i in clusters){
+  for(j in 1:3){
+    if(j==3){
+      k=1
+    }else{
+      k=j+1
+    }
+    resultst<-wilcox.test(meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[j]],meta_tots_by_part$FC[meta_tots_by_part$merged_clusters==i & meta_tots_by_part$Treatment==treatments[k]])
+    if(resultst$p.value<0.05){
+      print(i)
+      print(paste(treatments[j], "vs", treatments[k]))
+      print(resultst)
+    }
+  }
+}
+
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/F.pdf", width = 16, height = 9)
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+dev.off()->.
+
+```
+
+## Figure 1G Maximum differences across DE 
+
+```{r DE across conditions, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
+
+data<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230702AllClustersTreatmentconditionsRNA.rds")
+
+total_DE<-c()
+for(cluster in data){
+  DEs=0
+  for (comparison in cluster){
+    DEs=DEs+sum(comparison$p_val_adj<=0.05)
+  }
+  total_DE<-c(total_DE, DEs)
+}
+names(total_DE)<-names(data)
+print(total_DE)
+
+data<-unlist(data, recursive = FALSE)
+
+cond<-names(data)
+
+totalDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05))
+}
+
+
+
+totalDifferentiallyExpressed<-unlist(lapply(data, totalDE))
+res<-data.frame(cond,totalDifferentiallyExpressed)
+res$cluster<-gsub(paste(c(".Methadone_3_vs_Methadone_0",   ".Bup.Nalo_3_vs_Bup.Nalo_0",     ".Naltrexone_3_vs_Naltrexone_0", ".Methadone_3_vs_Bup.Nalo_3",   
+".Bup.Nalo_3_vs_Naltrexone_3",   ".Naltrexone_3_vs_Methadone_3" , ".Methadone_0_vs_Bup.Nalo_0"  ,  ".Bup.Nalo_0_vs_Naltrexone_0"  ,
+".Naltrexone_0_vs_Methadone_0"), collapse = "|"),"",res$cond)
+
+res$comp<-gsub(paste(names(table(Idents(results))),".", collapse = "|", sep = ""),"",res$cond)
+res$comp<-gsub("CD14\\+_Mono.","", res$comp)
+res$modality<-"RNA"
+
+res$cluster<-factor(res$cluster, levels = levels(results$merged_clusters))
+
+ggplot(res, aes(x=cluster, y=totalDifferentiallyExpressed, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/G.pdf", width = 16, height = 9)
+ggplot(res, aes(x=cluster, y=totalDifferentiallyExpressed, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+dev.off()->.
+
+```
+```{r 1E adendum for reordering , fig.width=16, fig.height=9, dev='png'}
+DefaultAssay(results)<-"RNA"
+opioid.genes<-c("OPRM1", "OGFR","OPRK1","OPRD1","OPRL1")
+results$T_Tp<-paste(results$Treatment, results$Timepoint, sep = "_")
+results$T_Tp<-factor(results$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+tlevels<-rev(c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+results$group<-paste(results$merged_clusters, results$T_Tp, sep="_")
+
+clusters<-rev(levels(results$merged_clusters))
+
+new_order<-c()
+for(i in clusters){
+  new_order<-c(new_order, unlist(paste(i,tlevels, sep = "_" )))
+}
+
+results<-SplitObject(results, "group")
+
+results<-results[new_order]
+
+results_new<-merge(results[[1]],c(results[[2]],results[[3]],results[[4]],results[[5]],results[[6]],results[[7]],results[[8]],results[[9]],results[[10]], 
+                                  results[[11]],results[[12]],results[[13]],results[[14]],results[[15]],results[[16]],results[[17]],results[[18]],results[[19]],results[[20]],
+                                  results[[21]],results[[22]],results[[23]],results[[24]],results[[25]],results[[26]],results[[27]],results[[28]],results[[29]],results[[30]],
+                                  results[[31]],results[[32]],results[[33]],results[[34]],results[[35]],results[[36]],results[[37]],results[[38]],results[[39]],results[[40]],
+                                  results[[41]],results[[42]],results[[43]],results[[44]],results[[45]],results[[46]],results[[47]],results[[48]],results[[49]],results[[50]],
+                                  results[[51]],results[[52]],results[[53]],results[[54]],results[[55]],results[[56]],results[[57]],results[[58]],results[[59]],results[[60]],
+                                  results[[61]],results[[62]],results[[63]],results[[64]],results[[65]],results[[66]],results[[67]],results[[68]],results[[69]],results[[70]],
+                                  results[[71]],results[[72]],results[[73]],results[[74]],results[[75]],results[[76]],results[[77]],results[[78]],results[[79]],results[[80]],
+                                  results[[81]],results[[82]],results[[83]],results[[84]],results[[85]],results[[86]],results[[87]],results[[88]],results[[89]],results[[90]],
+                                  results[[91]],results[[92]],results[[93]],results[[94]],results[[95]],results[[96]]))
+Idents(results_new)<-results_new$merged_clusters
+
+
+DotPlot(results_new, features = opioid.genes, split.by = "T_Tp",cols = BottleRocket3)
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/E.pdf", width = 16, height = 9)
+DotPlot(results_new, features = opioid.genes, split.by = "T_Tp", cols = BottleRocket3)
+dev.off()->.
+
+```
+
+```{r session info}
+devtools::session_info()
+```

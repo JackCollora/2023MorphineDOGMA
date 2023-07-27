@@ -1,0 +1,375 @@
+---
+title: "HIV-1 Supplement"
+author: "Jack Collora"
+date: "2023-07-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r GSEA funcs, echo=FALSE}
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gridExtra))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(msigdbr))
+suppressPackageStartupMessages(library(tibble))
+
+
+GSEA<-function(findmarks, genesets){
+  findmarks$gene<-rownames(findmarks)
+  genes<-findmarks %>%
+    arrange(desc(avg_log2FC)) %>% 
+    dplyr::select(gene, avg_log2FC)
+  rnk<- deframe(genes)
+  genes<- deframe(genes)
+  genes<- fgsea(pathways=genesets, stats = genes,eps=FALSE)
+  genes <- genes %>%
+    as_tibble() %>%
+    arrange(desc(NES))
+  genes<-list(genes, rnk)
+  names(genes)<-c("results","rnk")
+  return(genes)
+}
+
+#Function augments the existing result table with pathway information, including the entire rank order list of gene hits and NES scores 
+GSEATable<-function(GSEAwrap_out,gmt, gseaParam=1, name){
+  #doing constants first since those are easy
+  finalresults<-GSEAwrap_out[1][[1]]
+  #first get the order of genes for each pathway, modified from the fGSEA plot function  
+  rnk <- rank(GSEAwrap_out[2][[1]])
+  ord <- order(rnk, decreasing = T)
+  statsAdj <- GSEAwrap_out[2][[1]][ord]
+  statsAdj <- sign(statsAdj) * (abs(statsAdj) ^ gseaParam)
+  statsAdj <- statsAdj / max(abs(statsAdj))
+  pathwaysetup<-list()
+  NES<-list()
+  print("start ranking")
+  #basically here I just want to get everything into a character vector
+  for (i in 1:length(finalresults$pathway)){
+    pathway <- unname(as.vector(na.omit(match(gmt[[finalresults$pathway[[i]]]], names(statsAdj)))))
+    pathway <- sort(pathway)
+    NES[[i]]<-calcGseaStat(statsAdj, selectedStats = pathway,returnAllExtremes = TRUE)
+    NES[[i]]<-NES[[i]]$tops
+    pathwaysetup[[i]]<-pathway}
+  print("done ranking")
+  finalresults$rnkorder<-pathwaysetup
+  finalresults$NESorder<-NES
+  finalresults$ID<-name
+  return(finalresults)
+}
+
+
+GSEAbig<-function(listofGSEAtables){
+  GSEA<-bind_rows(listofGSEAtables)
+  return(GSEA)
+}
+
+
+
+GSEAEnrichmentPlotComparison<-function(PathwayName, GSEACompOut, returnplot="none", cols=NA){
+  top<-max(unlist(GSEACompOut$rnkorder))
+  GSEACompOut<-GSEACompOut[GSEACompOut$pathway==PathwayName,]
+  curves<-list()
+  for (i in 1:length(rownames(GSEACompOut))){curves[[i]]<-list(c(0,GSEACompOut$rnkorder[[i]],top),c(0,GSEACompOut$NESorder[[i]],0))
+  curves[[i]]<-as.data.frame(curves[[i]])
+  curves[[i]]$name<-GSEACompOut$ID[[i]]
+  names(curves[[i]])<-c("Rank","ES","Name")}
+  curves<-bind_rows(curves)
+  if(returnplot=="ES"){p<-EnrichmentScorePlot(curves)
+  return(p)}
+  if(returnplot=="BC"){p<-BarcodePlot(curves)
+  return(p)}
+  if(returnplot=="BOTH"){p<-ComboPlot(curves, Title = PathwayName, Table=GSEACompOut[GSEACompOut$pathway==PathwayName,c("ID","padj")], cols=cols)
+  return(p)}
+  return(curves)
+}
+
+BarcodePlot<-function(GSEACompPathway,stacked=FALSE){
+  if(stacked==TRUE){GSEACompPathway<-split(GSEACompPathway,GSEACompPathway$Name)
+  for (i in 1:length(GSEACompPathway)){GSEACompPathway[[i]]$y<-i}
+  GSEACompPathway<-bind_rows(GSEACompPathway)
+  GSEACompPathway$y<-((-GSEACompPathway$y)+1)
+  p<-ggplot(GSEACompPathway,aes(x=Rank, y=y,xend=Rank, yend=y-1,color=Name))+geom_segment()+theme_classic()+theme(axis.title.y=element_blank(),
+                                                                                                                  axis.text.y=element_blank(),
+                                                                                                                  axis.ticks.y=element_blank())+xlab("Gene Rank") + xlim(-5,max(GSEACompPathway$Rank+100) )
+  }else{
+    p<-ggplot(GSEACompPathway,aes(x=Rank, y=-1,xend=Rank, yend=1,color=Name))+geom_segment()+theme_classic()
+  }
+  return(p)}
+
+
+EnrichmentScorePlot<-function(GSEACompPathway){
+  p<-ggplot(GSEACompPathway, aes(x=Rank, y=ES, color=Name))+geom_line(linewidth=1.5)+geom_hline(yintercept = 0)+theme_classic()+theme(axis.title.x=element_blank(),
+                                                                                                                                 axis.text.x=element_blank(),
+                                                                                                                                 axis.ticks.x=element_blank())+ylab("Enrichment Score")+xlim(-5,max(GSEACompPathway$Rank+100) )
+  return(p)}
+ComboPlot<-function(GSEACompPathway, Title="Enrichment Plot",Table=NA, cols=NA){
+  EP<-EnrichmentScorePlot(GSEACompPathway)
+  if(length(Table)>1){EP<-EP+annotation_custom(tableGrob(Table, theme = ttheme_minimal(), rows = NULL, cols = c("Name","q Value")), xmin = 10000, ymin = 0.60)}
+  BC<-BarcodePlot(GSEACompPathway, stacked=TRUE)
+  if(!is.na(cols[1])){
+    BC<-BC+scale_color_manual(values = cols)
+    EP<-EP+scale_color_manual(values = cols)
+  }
+  p<-ggarrange(EP,BC, common.legend = TRUE, ncol = 1, heights = c(0.6,0.25), align = "v", labels = Title)
+  
+  return(p)}
+ 
+
+
+GSEATable<-function(GSEAwrap_out,gmt, gseaParam=1, name){
+  #doing constants first since those are easy
+  finalresults<-GSEAwrap_out[1][[1]]
+  #first get the order of genes for each pathway, modified from the fGSEA plot function  
+  rnk <- rank(GSEAwrap_out[2][[1]])
+  ord <- order(rnk, decreasing = T)
+  statsAdj <- GSEAwrap_out[2][[1]][ord]
+  statsAdj <- sign(statsAdj) * (abs(statsAdj) ^ gseaParam)
+  statsAdj <- statsAdj / max(abs(statsAdj))
+  pathwaysetup<-list()
+  NES<-list()
+  print("start ranking")
+  #basically here I just want to get everything into a character vector
+  for (i in 1:length(finalresults$pathway)){
+    pathway <- unname(as.vector(na.omit(match(gmt[[finalresults$pathway[[i]]]], names(statsAdj)))))
+    pathway <- sort(pathway)
+    NES[[i]]<-calcGseaStat(statsAdj, selectedStats = pathway,returnAllExtremes = TRUE)
+    NES[[i]]<-NES[[i]]$tops
+    pathwaysetup[[i]]<-pathway}
+  print("done ranking")
+  finalresults$rnkorder<-pathwaysetup
+  finalresults$NESorder<-NES
+  finalresults$ID<-name
+  return(finalresults)
+}
+
+FixMotifID<-function(markeroutput, seuratobj){
+  markeroutput$genes<-ConvertMotifID(seuratobj, assay="ATAC", id=rownames(markeroutput))
+  return(markeroutput)
+}
+
+
+
+```
+# HIV infected cells 
+
+HIV infected cells were identified by mapping transcriptome to HIV references (HXB2, Autologous, and Clade B) and ATAC-seq profiles to HIV references (HXB2, Autologous). A subset of reads were individually blasted to confirm they do map specifically to HIV, and then cells were annotated. A minimum of two reads was required to declare something HIV infected. See 20230626AnnotateHIV_2.R for exact processing. 
+
+```{r loading, echo=FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230626FinalClusternames.rds")
+```
+## HIV infected cells cluster membership and UMAPs (Fig A - B)
+```{r umaps and cluster memberships, echo=FALSE, fig.width= 16, fig.height= 9, dev='pdf'}
+
+results$HIV_type<-case_when(results$HIV_reads_ATAC>1 & results$HIV_reads_RNA>1 ~"HIV RNA+ and HIV DNA+",
+                            results$HIV_reads_ATAC>1 ~ "HIV DNA+", results$HIV_reads_RNA>1 ~ "HIV RNA+", 
+                            T ~ "HIV not detected")
+
+umapcords<-data.frame(results@reductions$umap@cell.embeddings)
+umapcords$HIV<-results$HIV_type
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+colmap<-c("HIV not detected"="grey62", "HIV RNA+ and HIV DNA+"="#CB2314","HIV DNA+"="#354823","HIV RNA+" = "#FAD510")
+
+ggplot(umapcords, aes(x=UMAP_1, y=UMAP_2, color="HIV not detected"))+geom_point()+
+  geom_point(data=umapcords[umapcords$HIV!="HIV not detected",], aes(x=UMAP_1, y=UMAP_2, color=HIV),size=2)+
+  scale_color_manual(values = colmap)+theme_classic()
+
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(freq=n/sum(n))
+
+ggplot(meta, aes(x=merged_clusters, y=freq, fill=HIV_type), )+geom_bar(stat="identity", position=position_dodge(width = 1))+scale_fill_manual(values = colmap)+theme_classic()+xlab("Cluster")+ylab("proportion of cells")+theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3))
+
+#have to simulate because its too resource intensive
+#no difference in proportions across the three groups 
+fisher.test(cbind(meta$n[meta$HIV_type=="HIV not detected"],
+                  meta$n[meta$HIV_type=="HIV RNA+ and HIV DNA+"],
+                  meta$n[meta$HIV_type=="HIV DNA+"],
+                  meta$n[meta$HIV_type=="HIV RNA+"]), simulate.p.value = TRUE, B = 1e6)
+# its very close with everything pooled but still not sig 
+fisher.test(rbind(meta$n[meta$HIV_type=="HIV not detected"],
+                  colSums(rbind(meta$n[meta$HIV_type=="HIV RNA+ and HIV DNA+"],
+                  meta$n[meta$HIV_type=="HIV DNA+"],
+                  meta$n[meta$HIV_type=="HIV RNA+"]))), simulate.p.value = TRUE, B = 1e6)
+
+HIV_counts<-rbind(meta$n[meta$HIV_type=="HIV not detected"],
+             colSums(rbind(meta$n[meta$HIV_type=="HIV RNA+ and HIV DNA+"],
+                           meta$n[meta$HIV_type=="HIV DNA+"],
+                           meta$n[meta$HIV_type=="HIV RNA+"])))
+#not sig even if we drop clusters that dont have any HIV 
+fisher.test(HIV_counts[,HIV_counts[2,]!=0], simulate.p.value = TRUE, B = 1e6)
+```
+
+
+## HIV infected cells treatment conditions (Fig C - D)
+
+```{r HIV across treatments, echo=FALSE,  fig.width= 16, fig.height= 9, dev='pdf'}
+
+results$HIV_bool<-case_when(results$HIV_reads_ATAC>1 | results$HIV_reads_RNA>1 ~TRUE, T ~ FALSE)
+results$HIV_bool<-factor(results$HIV_bool, levels = c(TRUE, FALSE))
+Timepoint<-table(results$HIV_bool, results$Timepoint)
+colnames(Timepoint)<-c("0 Months", "3 Months")
+rownames(Timepoint)<-c("HIV_positive","HIV_negative")
+to_plot<-data.frame(Timepoint/rowSums(Timepoint))
+colnames(to_plot)<-c("HIV","Time","Prop")
+colmap<-c("HIV_negative"="grey62", "HIV_positive"="#CB2314")
+ggplot(to_plot, aes(x=Time, y=Prop, fill=HIV))+geom_bar(stat="identity", position=position_dodge(width = 1))+scale_fill_manual(values = colmap)+theme_classic()+xlab("Cluster")+ylab("proportion of cells")+theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3))
+#no significant difference
+chisq.test(Timepoint)
+
+Treatment<-table(results$HIV_bool, results$Treatment)
+
+rownames(Treatment)<-c("HIV_positive","HIV_negative")
+to_plot<-data.frame(Treatment/rowSums(Treatment))
+colnames(to_plot)<-c("HIV","Treatment","Prop")
+colmap<-c("HIV_negative"="grey62", "HIV_positive"="#CB2314")
+ggplot(to_plot, aes(x=Treatment, y=Prop, fill=HIV))+geom_bar(stat="identity", position=position_dodge(width = 1))+scale_fill_manual(values = colmap)+theme_classic()+xlab("Cluster")+ylab("proportion of cells")+theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3))
+#significantly different across all 
+chisq.test(Treatment)
+#narrowed down to just Naltrexone 
+chisq.test(table(results$Treatment=="Naltrexone", results$HIV_bool))
+
+```
+
+
+## HIV infected cells differential expression (RNA, Fig E - H)
+
+```{r HIV differential expression, echo=FALSE,  fig.width= 16, fig.height= 9, dev='pdf'}
+
+#subset to just within T cell annotations
+DefaultAssay(results)<-"RNA"
+results$keep<-!is.na(results$CD4anno)
+results.sub<-subset(results, keep==TRUE)
+Idents(results.sub)<-results.sub$HIV_reads_ATAC>1
+marks_ATAC.sub<-FindMarkers(results.sub, TRUE, FALSE)
+Idents(results.sub)<-results.sub$HIV_reads_RNA>1
+marks_RNA.sub<-FindMarkers(results.sub, TRUE, FALSE)
+Idents(results.sub)<-(results.sub$HIV_reads_RNA>1)|(results.sub$HIV_reads_ATAC>1)
+marks_either.sub<-FindMarkers(results.sub, TRUE, FALSE)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_ATAC.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_RNA.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV RNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_either.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ or HIV RNA+ cells vs all T cells'))
+
+toPlot<-c("PTPN13","TAF5L", "ZNF195","TRAV8-2")
+Idents(results.sub)<-factor(Idents(results.sub), levels = c("TRUE","FALSE"))
+VlnPlot(results.sub, features = toPlot, pt.size = 0, ncol = 4)
+
+```
+
+## HIV infected cells differential expression (chromvar)
+
+```{r HIV differential chromvar, echo=FALSE,  fig.width= 16, fig.height= 9, dev='pdf'}
+
+#subset to just within T cell annotations
+DefaultAssay(results)<-"chromvar"
+results.sub<-subset(results, keep==TRUE)
+Idents(results.sub)<-results.sub$HIV_reads_ATAC>1
+marks_ATAC.sub<-FindMarkers(results.sub, TRUE, FALSE,   mean.fxn = rowMeans,
+  fc.name = "avg_diff")
+Idents(results.sub)<-results.sub$HIV_reads_RNA>1
+marks_RNA.sub<-FindMarkers(results.sub, TRUE, FALSE,  mean.fxn = rowMeans,
+  fc.name = "avg_diff")
+Idents(results.sub)<-(results.sub$HIV_reads_RNA>1)|(results.sub$HIV_reads_ATAC>1)
+marks_either.sub<-FindMarkers(results.sub, TRUE, FALSE,  mean.fxn = rowMeans,
+  fc.name = "avg_diff")
+
+marks_ATAC.sub<-FixMotifID(marks_ATAC.sub,results.sub)
+marks_RNA.sub<-FixMotifID(marks_RNA.sub,results.sub)
+marks_either.sub<-FixMotifID(marks_either.sub,results.sub)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_ATAC.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_RNA.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV RNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_either.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ or HIV RNA+ cells vs all T cells'))
+
+#toPlot<-c("PTPN13","TAF5L", "ZNF195","TRAV8-2")
+#Idents(results.sub)<-factor(Idents(results.sub), levels = c("TRUE","FALSE"))
+#VlnPlot(results.sub, features = toPlot, pt.size = 0.1, ncol = 4)
+
+```
+
+## HIV infected cells differential expression (GSEA) 
+
+
+
+```{r HIV differential GSEA, echo=FALSE, fig.width= 16, fig.height= 9, dev='pdf'}
+
+m_df_H<- msigdbr(species = "Homo sapiens", category = "H")
+m_df_H<- rbind(msigdbr(species = "Homo sapiens", category = "C2"), m_df_H)
+m_df_H<- rbind(msigdbr(species = "Homo sapiens", category = "C7"), m_df_H)
+fgsea_sets<- m_df_H %>% split(x = .$gene_symbol, f = .$gs_name)
+
+DefaultAssay(results)<-"RNA"
+results.sub<-subset(results, keep==TRUE)
+Idents(results.sub)<-(results.sub$HIV_reads_RNA>1)|(results.sub$HIV_reads_ATAC>1)
+#had to use 0.1 to ensure that we filter genes expressed in a single HIV infected cell and no/few other cells, which have insane p values but are functionally uninformative. While in theory GSEA is robust to this, in this case its not going to be reliable. 
+marks<-FindMarkers(results.sub, TRUE, FALSE, logfc.threshold = -Inf, min.pct = 0.1, min.diff.pct = -Inf)
+
+GSEAres<-GSEA(marks, genesets = fgsea_sets)
+GSEAres<-GSEATable(GSEAres, gmt = fgsea_sets, name = "HIVinfected" )
+GSEAres<-subset(GSEAres,padj<0.05 & NES>0)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=GSEAres, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ or HIV RNA+ cells vs all T cells'))
+
+toplot<-c("GSE11057_NAIVE_VS_CENT_MEMORY_CD4_TCELL_DN","ZHENG_BOUND_BY_FOXP3","GSE11057_EFF_MEM_VS_CENT_MEM_CD4_TCELL_UP","GSE14699_DELETIONAL_TOLERANCE_VS_ACTIVATED_CD8_TCELL_UP")
+
+for(i in toplot){
+  print(GSEAEnrichmentPlotComparison(PathwayName = i, GSEACompOut = GSEAres, returnplot = "BOTH"))
+}
+
+```
+
+
+
+## HIV infected cells differential accessibility (ATAC)
+
+```{r HIV differential ATAC, echo=FALSE,  fig.width= 16, fig.height= 9, dev='pdf'}
+
+#subset to just within T cell annotations
+DefaultAssay(results)<-"ATAC"
+results.sub<-subset(results, keep==TRUE)
+Idents(results.sub)<-results.sub$HIV_reads_ATAC>1
+marks_ATAC.sub<-FindMarkers(results.sub, TRUE, FALSE,  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+Idents(results.sub)<-results.sub$HIV_reads_RNA>1
+marks_RNA.sub<-FindMarkers(results.sub, TRUE, FALSE,  test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+Idents(results.sub)<-(results.sub$HIV_reads_RNA>1)|(results.sub$HIV_reads_ATAC>1)
+marks_either.sub<-FindMarkers(results.sub, TRUE, FALSE, test.use = 'LR',
+  min.pct = 0.05,
+  latent.vars = 'nCount_ATAC'
+)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_ATAC.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_RNA.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV RNA+ cells vs all T cells'))
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=marks_either.sub, caption = htmltools::tags$caption( style = 'caption-side: top; text-align: center; color:black;  font-size:200% ;','HIV DNA+ or HIV RNA+ cells vs all T cells'))
+
+#toPlot<-c("PTPN13","TAF5L", "ZNF195","TRAV8-2")
+#Idents(results.sub)<-factor(Idents(results.sub), levels = c("TRUE","FALSE"))
+#VlnPlot(results.sub, features = toPlot, pt.size = 0.1, ncol = 4)
+
+```
+
+
+```{r session info}
+devtools::session_info()
+```

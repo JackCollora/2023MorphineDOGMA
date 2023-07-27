@@ -1,0 +1,266 @@
+---
+title: "Analyzing Differential Expression Across Conditions to Prioritize Clusters"
+author: "Jack Collora"
+date: "2023-07-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objective 
+
+I have generated all of the comparisons of interest in a previous script (20230702FindingConditionMarkersAcrossConditions.R). Here I will process those results to try and identify any clusters that show a consistent change across modalities between conditions so that we can look into those further. 
+
+```{r loading}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds")
+
+```
+
+## RNA-seq results
+
+Here I first examine the RNA-seq results. I want to know 1. which clusters have the greatest number of differentially expressed genes (total), 2. what is the direction of those genes (up or down), and 3. how does it differ by cluster comparison. 
+
+```{r RNA-seq, fig.height=9, fig.width=16}
+data<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230702AllClustersTreatmentconditionsRNA.rds")
+
+total_DE<-c()
+for(cluster in data){
+  DEs=0
+  for (comparison in cluster){
+    DEs=DEs+sum(comparison$p_val_adj<=0.05)
+  }
+  total_DE<-c(total_DE, DEs)
+}
+names(total_DE)<-names(data)
+print(total_DE)
+
+upDEs<-c()
+downDEs<-c()
+
+for(cluster in data){
+  upDE=0
+  downDE=0
+  for (comparison in cluster){
+    upDE=upDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_log2FC>0))
+    downDE=downDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_log2FC<0))
+
+  }
+  upDEs<-c(upDEs, upDE)
+  downDEs<-c(downDEs, downDE)
+  }
+
+names(upDEs)<-names(data)
+print(upDEs)
+names(downDEs)<-names(data)
+print(downDEs)
+
+data<-unlist(data, recursive = FALSE)
+
+cond<-names(data)
+
+totalDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05))
+}
+
+upDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_log2FC>0))
+}
+
+downDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_log2FC<0))
+}
+
+totalDifferentiallyExpressed<-unlist(lapply(data, totalDE))
+res<-data.frame(cond,totalDifferentiallyExpressed)
+res$upDE<-unlist(lapply(data, upDE))
+res$downDE<-unlist(lapply(data, downDE))
+res$cluster<-gsub(paste(c(".Methadone_3_vs_Methadone_0",   ".Bup.Nalo_3_vs_Bup.Nalo_0",     ".Naltrexone_3_vs_Naltrexone_0", ".Methadone_3_vs_Bup.Nalo_3",   
+".Bup.Nalo_3_vs_Naltrexone_3",   ".Naltrexone_3_vs_Methadone_3" , ".Methadone_0_vs_Bup.Nalo_0"  ,  ".Bup.Nalo_0_vs_Naltrexone_0"  ,
+".Naltrexone_0_vs_Methadone_0"), collapse = "|"),"",res$cond)
+
+res$comp<-gsub(paste(names(table(Idents(results))),".", collapse = "|", sep = ""),"",res$cond)
+res$comp<-gsub("CD14\\+_Mono.","", res$comp)
+res$modality<-"RNA"
+
+ggplot(res, aes(x=cluster, y=totalDifferentiallyExpressed, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+
+```
+
+Based on these results, Cytotoxic T are among the most differential across conditions with 677 genes changing across conditions, but there are also changes in Memory CD4 that are polarized and in Naive T cells taht might be interesting. B cells, myeloid cells, etc. have fewer differences than there are comparisons.
+
+There doesnt seem to be a polarization between up and down regulation, which is nice to see. it's suggestive that we're seeing distinct signatures. 
+
+Based on the differences across clusters, it looks like Cytotoxic T are genuinely the most nteresting across conditions. We also see significant baseline differences between Bup.Nalo_0 and Naltrexone_0. From this other clusters that are intersting include Memory CD4_polarized 1/2 and Naive CD4_T_1, and possible the Treg proliferating cluster. Other unbalanced clusters (monocytes and whatnot) are not overall different accross conditions in any interesting degrees.  
+
+## ATAC
+
+Here we want to look for the same thing as above, just trying it wth the ATAC figures. I'll make a different "res" frame so that I can combine them at the end. 
+```{r ATAC, fig.height=9, fig.width=16}
+data<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230702AllClustersTreatmentconditionsATAC.rds")
+
+total_DE<-c()
+for(cluster in data){
+  DEs=0
+  for (comparison in cluster){
+    DEs=DEs+sum(comparison$p_val_adj<=0.05)
+  }
+  total_DE<-c(total_DE, DEs)
+}
+names(total_DE)<-names(data)
+print(total_DE)
+
+upDEs<-c()
+downDEs<-c()
+
+for(cluster in data){
+  upDE=0
+  downDE=0
+  for (comparison in cluster){
+    upDE=upDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_log2FC>0))
+    downDE=downDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_log2FC<0))
+
+  }
+  upDEs<-c(upDEs, upDE)
+  downDEs<-c(downDEs, downDE)
+  }
+
+names(upDEs)<-names(data)
+print(upDEs)
+names(downDEs)<-names(data)
+print(downDEs)
+
+data<-unlist(data, recursive = FALSE)
+
+cond<-names(data)
+
+totalDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05))
+}
+
+upDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_log2FC>0))
+}
+
+downDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_log2FC<0))
+}
+
+totalDifferentiallyExpressed<-unlist(lapply(data, totalDE))
+res2<-data.frame(cond,totalDifferentiallyExpressed)
+res2$upDE<-unlist(lapply(data, upDE))
+res2$downDE<-unlist(lapply(data, downDE))
+res2$cluster<-gsub(paste(c(".Methadone_3_vs_Methadone_0",   ".Bup.Nalo_3_vs_Bup.Nalo_0",     ".Naltrexone_3_vs_Naltrexone_0", ".Methadone_3_vs_Bup.Nalo_3",   
+".Bup.Nalo_3_vs_Naltrexone_3",   ".Naltrexone_3_vs_Methadone_3" , ".Methadone_0_vs_Bup.Nalo_0"  ,  ".Bup.Nalo_0_vs_Naltrexone_0"  ,
+".Naltrexone_0_vs_Methadone_0"), collapse = "|"),"",res2$cond)
+
+res2$comp<-gsub(paste(names(table(Idents(results))),".", collapse = "|", sep = ""),"",res2$cond)
+res2$comp<-gsub("CD14\\+_Mono.","", res2$comp)
+res2$modality<-"ATAC"
+
+ggplot(res2, aes(x=cluster, y=totalDifferentiallyExpressed, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+
+
+
+```
+ ATAC-seq has basically no differencces across conditions. How bizzare that we see so few statistically significant differences. We can find differences between clusters but between individuals there are virtually no changes in accessibility within populations. 
+ 
+ Of those with differences, we see these primarily within the polarized and naive populations. 
+ 
+ Overall these results suggest that we're seeing a limited impact on chromatin accessibility across the conditions. 
+
+## Chromvar
+
+Here we want to look for the same thing as above, just trying it wth the Chromvar figures. I'll make a different "res" frame so that I can combine them at the end. 
+```{r Chromvar, fig.height=9, fig.width=16}
+data<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230702AllClustersTreatmentconditionschromVAR.rds")
+
+total_DE<-c()
+for(cluster in data){
+  DEs=0
+  for (comparison in cluster){
+    DEs=DEs+sum(comparison$p_val_adj<=0.05)
+  }
+  total_DE<-c(total_DE, DEs)
+}
+names(total_DE)<-names(data)
+print(total_DE)
+
+upDEs<-c()
+downDEs<-c()
+
+for(cluster in data){
+  upDE=0
+  downDE=0
+  for (comparison in cluster){
+    upDE=upDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_diff>0))
+    downDE=downDE+sum((comparison$p_val_adj<=0.05) & (comparison$avg_diff<0))
+
+  }
+  upDEs<-c(upDEs, upDE)
+  downDEs<-c(downDEs, downDE)
+  }
+
+names(upDEs)<-names(data)
+print(upDEs)
+names(downDEs)<-names(data)
+print(downDEs)
+
+data<-unlist(data, recursive = FALSE)
+
+cond<-names(data)
+
+totalDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05))
+}
+
+upDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_diff>0))
+}
+
+downDE<-function(dataframe){
+  return(sum(dataframe$p_val_adj<0.05 & dataframe$avg_diff<0))
+}
+
+totalDifferentiallyExpressed<-unlist(lapply(data, totalDE))
+res3<-data.frame(cond,totalDifferentiallyExpressed)
+res3$upDE<-unlist(lapply(data, upDE))
+res3$downDE<-unlist(lapply(data, downDE))
+res3$cluster<-gsub(paste(c(".Methadone_3_vs_Methadone_0",   ".Bup.Nalo_3_vs_Bup.Nalo_0",     ".Naltrexone_3_vs_Naltrexone_0", ".Methadone_3_vs_Bup.Nalo_3",   
+".Bup.Nalo_3_vs_Naltrexone_3",   ".Naltrexone_3_vs_Methadone_3" , ".Methadone_0_vs_Bup.Nalo_0"  ,  ".Bup.Nalo_0_vs_Naltrexone_0"  ,
+".Naltrexone_0_vs_Methadone_0"), collapse = "|"),"",res3$cond)
+
+res3$comp<-gsub(paste(names(table(Idents(results))),".", collapse = "|", sep = ""),"",res3$cond)
+res3$comp<-gsub("CD14\\+_Mono.","", res3$comp)
+res3$modality<-"chromvar"
+
+ggplot(res3, aes(x=cluster, y=totalDifferentiallyExpressed, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+
+
+
+```
+
+As with the RNA, the most interesting clusters are these that are polarized and naive CD4 across conditions. So I guess it makes the most sense to evaluate those four more closely and see what we can say about them. It's obvious that the RNA and chromvar are the only ones that make sense to look much more closely at since they are the only ones that have a difference across conditions, while ATAC is very information poor here. This is also likely why the linkage analysis was not fruitful. 
+
+## multimodality differences 
+
+Now we're just going to sum the features across conditions to see if any populations become interesting when we look more closely. 
+
+```{r combo, fig.height=9,fig.width=16}
+
+res<-rbind(res, res2, res3)
+res_meta<-group_by(res, cluster, comp, cond)%>%summarise(n=sum(totalDifferentiallyExpressed))
+ggplot(res_meta, aes(x=cluster, y=n, fill=comp))+geom_col(position="dodge")+theme_classic()+theme(axis.text.x = element_text(vjust = 0.3, angle = 90, hjust=1))
+
+```
+
+```{r session info}
+devtools::session_info()
+```

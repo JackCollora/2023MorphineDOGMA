@@ -1,0 +1,555 @@
+---
+title: "Polarized_2 high resolution analysis"
+author: "Jack Collora"
+date: "2023-07-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Analysis objectives 
+
+Based on the previous results in the aggregate DE analysis, it seems reasonable to focus on these cells. The specific quesitons to answer are:
+
+1. What are the transcription factor activities that vary across conditions  
+2. What are the proteins different across conditions  
+3. What can we conclude about the transcriptional profiles different across individuals by  
+ * GSEA  
+ * GO analysis  
+ 
+```{r loading in data libraries and GSEA functions}
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gridExtra))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(msigdbr))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(BiocParallel))
+suppressPackageStartupMessages(library(enrichR))
+
+register(MulticoreParam(4))
+
+GSEA<-function(findmarks, genesets){
+  findmarks$gene<-rownames(findmarks)
+  genes<-findmarks %>%
+    arrange(desc(avg_log2FC)) %>% 
+    dplyr::select(gene, avg_log2FC)
+  rnk<- deframe(genes)
+  genes<- deframe(genes)
+  genes<- fgsea(pathways=genesets, stats = genes,eps=FALSE)
+  genes <- genes %>%
+    as_tibble() %>%
+    arrange(desc(NES))
+  genes<-list(genes, rnk)
+  names(genes)<-c("results","rnk")
+  return(genes)
+}
+
+#Function augments the existing result table with pathway information, including the entire rank order list of gene hits and NES scores 
+GSEATable<-function(GSEAwrap_out,gmt, gseaParam=1, name){
+  #doing constants first since those are easy
+  finalresults<-GSEAwrap_out[1][[1]]
+  #first get the order of genes for each pathway, modified from the fGSEA plot function  
+  rnk <- rank(GSEAwrap_out[2][[1]])
+  ord <- order(rnk, decreasing = T)
+  statsAdj <- GSEAwrap_out[2][[1]][ord]
+  statsAdj <- sign(statsAdj) * (abs(statsAdj) ^ gseaParam)
+  statsAdj <- statsAdj / max(abs(statsAdj))
+  pathwaysetup<-list()
+  NES<-list()
+  print("start ranking")
+  #basically here I just want to get everything into a character vector
+  for (i in 1:length(finalresults$pathway)){
+    pathway <- unname(as.vector(na.omit(match(gmt[[finalresults$pathway[[i]]]], names(statsAdj)))))
+    pathway <- sort(pathway)
+    NES[[i]]<-calcGseaStat(statsAdj, selectedStats = pathway,returnAllExtremes = TRUE)
+    NES[[i]]<-NES[[i]]$tops
+    pathwaysetup[[i]]<-pathway}
+  print("done ranking")
+  finalresults$rnkorder<-pathwaysetup
+  finalresults$NESorder<-NES
+  finalresults$ID<-name
+  return(finalresults)
+}
+
+
+GSEAbig<-function(listofGSEAtables){
+  GSEA<-bind_rows(listofGSEAtables)
+  return(GSEA)
+}
+
+
+
+GSEAEnrichmentPlotComparison<-function(PathwayName, GSEACompOut, returnplot="none", cols=NA){
+  top<-max(unlist(GSEACompOut$rnkorder))
+  GSEACompOut<-GSEACompOut[GSEACompOut$pathway==PathwayName,]
+  curves<-list()
+  for (i in 1:length(rownames(GSEACompOut))){curves[[i]]<-list(c(0,GSEACompOut$rnkorder[[i]],top),c(0,GSEACompOut$NESorder[[i]],0))
+  curves[[i]]<-as.data.frame(curves[[i]])
+  curves[[i]]$name<-GSEACompOut$ID[[i]]
+  names(curves[[i]])<-c("Rank","ES","Name")}
+  curves<-bind_rows(curves)
+  if(returnplot=="ES"){p<-EnrichmentScorePlot(curves)
+  return(p)}
+  if(returnplot=="BC"){p<-BarcodePlot(curves)
+  return(p)}
+  if(returnplot=="BOTH"){p<-ComboPlot(curves, Title = PathwayName, Table=GSEACompOut[GSEACompOut$pathway==PathwayName,c("ID","padj")], cols=cols)
+  return(p)}
+  return(curves)
+}
+
+BarcodePlot<-function(GSEACompPathway,stacked=FALSE){
+  if(stacked==TRUE){GSEACompPathway<-split(GSEACompPathway,GSEACompPathway$Name)
+  for (i in 1:length(GSEACompPathway)){GSEACompPathway[[i]]$y<-i}
+  GSEACompPathway<-bind_rows(GSEACompPathway)
+  GSEACompPathway$y<-((-GSEACompPathway$y)+1)
+  p<-ggplot(GSEACompPathway,aes(x=Rank, y=y,xend=Rank, yend=y-1,color=Name))+geom_segment()+theme_classic()+theme(axis.title.y=element_blank(),
+                                                                                                                  axis.text.y=element_blank(),
+                                                                                                                  axis.ticks.y=element_blank())+xlab("Gene Rank") + xlim(-5,max(GSEACompPathway$Rank+100) )
+  }else{
+    p<-ggplot(GSEACompPathway,aes(x=Rank, y=-1,xend=Rank, yend=1,color=Name))+geom_segment()+theme_classic()
+  }
+  return(p)}
+
+
+EnrichmentScorePlot<-function(GSEACompPathway){
+  p<-ggplot(GSEACompPathway, aes(x=Rank, y=ES, color=Name))+geom_line(linewidth=1.5)+geom_hline(yintercept = 0)+theme_classic()+theme(axis.title.x=element_blank(),
+                                                                                                                                 axis.text.x=element_blank(),
+                                                                                                                                 axis.ticks.x=element_blank())+ylab("Enrichment Score")+xlim(-5,max(GSEACompPathway$Rank+100) )
+  return(p)}
+ComboPlot<-function(GSEACompPathway, Title="Enrichment Plot",Table=NA, cols=NA){
+  EP<-EnrichmentScorePlot(GSEACompPathway)
+  if(length(Table)>1){EP<-EP+annotation_custom(tableGrob(Table, theme = ttheme_minimal(), rows = NULL, cols = c("Name","q Value")), xmin = 10000, ymin = 0.60)}
+  BC<-BarcodePlot(GSEACompPathway, stacked=TRUE)
+  if(!is.na(cols[1])){
+    BC<-BC+scale_color_manual(values = cols)
+    EP<-EP+scale_color_manual(values = cols)
+  }
+  p<-ggarrange(EP,BC, common.legend = TRUE, ncol = 1, heights = c(0.6,0.25), align = "v", labels = Title)
+  
+  return(p)}
+
+
+Meanenrichmentplot<-function(GSEAmain,greplist=c(),pathwaytodo=""){
+    final<-list()
+    IDssmooth<-paste(greplist, "smooth")
+    IDsgray<-paste(greplist, "rough")
+    #for each group, go through and make a smooth track 
+    for(i in 1:length(greplist)){
+    GSEAres<-GSEAmain[grepl(greplist[[i]], GSEAmain$ID) & grepl(pathwaytodo, GSEAmain$pathway),]
+    GSEAres$split<-IDsgray[[i]]
+    maximum<-max(unlist(GSEAres$rnkorder))
+    #generate bins of size 5 (helps with smoothing)
+    bins<-seq(1,maximum ,5)
+    bins<-c(bins, maximum,maximum)
+    res<-list()
+    #average anypoint within those bins
+    for (j in 1:(length(bins)-1)){
+      res[[j]]<-mean(unlist(GSEAres$NESorder)[unlist(GSEAres$rnkorder)>bins[[j]]& unlist(GSEAres$rnkorder)<=bins[[j+1]]])
+    }
+    res<-c(res, 0)
+    #remove any bin that does not have a point 
+    bins<-bins[!is.na(res)]
+    res<-res[!is.na(res)]
+    #make a new track, add it to the overall 
+    res<-list(GSEAres$pathway[[1]], NA, NA, NA, NA, NA, NA, NA, list(bins), list(res), "smooth", IDssmooth[[i]])
+    GSEAres<-rbind(GSEAres, res)
+    GSEAres$NESorder<-lapply(GSEAres$NESorder, as.double)
+    curves<-list()
+    #generate coordinate curves for each track including the smooth 
+    for (j in 1:length(rownames(GSEAres))){curves[[j]]<-list(c(0,GSEAres$rnkorder[[j]],maximum),c(0,GSEAres$NESorder[[j]],0))
+    curves[[j]]<-as.data.frame(curves[[j]])
+    curves[[j]]$name<-GSEAres$ID[[j]]
+    curves[[j]]$split<-GSEAres$split[[j]]
+    names(curves[[j]])<-c("Rank","ES","Name","split")}
+    final[[i]]<-bind_rows(curves)
+    }
+    #merge all the groups together
+  final<-bind_rows(final)
+  #plot things
+  final<-ggplot(final[!grepl("smooth", final$split),],aes(x=Rank, y=ES, group=Name,color=split))+geom_line(linewidth=0.25)+geom_hline(yintercept = 0) + 
+    geom_smooth(data = final[grepl("smooth", final$split),], aes(x=Rank, y=ES, group=split, color=split), linewidth=1.5, method = "gam")+theme_classic()+
+    ggtitle(pathwaytodo)+ylab("Enrichment Score")+xlim(-5,max(maximum+100))
+  
+  return(final)}
+ 
+
+
+GSEATable<-function(GSEAwrap_out,gmt, gseaParam=1, name){
+  #doing constants first since those are easy
+  finalresults<-GSEAwrap_out[1][[1]]
+  #first get the order of genes for each pathway, modified from the fGSEA plot function  
+  rnk <- rank(GSEAwrap_out[2][[1]])
+  ord <- order(rnk, decreasing = T)
+  statsAdj <- GSEAwrap_out[2][[1]][ord]
+  statsAdj <- sign(statsAdj) * (abs(statsAdj) ^ gseaParam)
+  statsAdj <- statsAdj / max(abs(statsAdj))
+  pathwaysetup<-list()
+  NES<-list()
+  print("start ranking")
+  #basically here I just want to get everything into a character vector
+  for (i in 1:length(finalresults$pathway)){
+    pathway <- unname(as.vector(na.omit(match(gmt[[finalresults$pathway[[i]]]], names(statsAdj)))))
+    pathway <- sort(pathway)
+    NES[[i]]<-calcGseaStat(statsAdj, selectedStats = pathway,returnAllExtremes = TRUE)
+    NES[[i]]<-NES[[i]]$tops
+    pathwaysetup[[i]]<-pathway}
+  print("done ranking")
+  finalresults$rnkorder<-pathwaysetup
+  finalresults$NESorder<-NES
+  finalresults$ID<-name
+  return(finalresults)
+}
+
+FixMotifID<-function(markeroutput, seuratobj){
+  markeroutput$genes<-ConvertMotifID(seuratobj, assay="ATAC", id=rownames(markeroutput))
+  return(markeroutput)
+}
+
+
+GSEAbig<-function(listofGSEAtables){
+  GSEA<-bind_rows(listofGSEAtables)
+  return(GSEA)
+}
+
+VolPlot<-function(results,top=TRUE, adthresh=TRUE, thresh=0.2, threshn=30, Title=NA){
+  results$value<-(-log10(results$p_val_adj))
+  results$value[results$value==Inf]<-300
+  results$gene<-rownames(results)
+  p<-ggplot(results,aes(x=avg_log2FC, y=value, label=gene))+geom_point()+theme_classic()+xlab("Average Log Fold Change")+ylab("-log10 adjusted p value")+theme(plot.title = element_text(hjust = 0.5))
+  if(adthresh==TRUE){thresh<-AdaptiveThreshold(results, Tstart=thresh,n=threshn)}
+  if(top==TRUE){
+    p<- p + geom_text_repel(aes(label=ifelse((avg_log2FC>thresh|avg_log2FC<(-thresh))&value>(-log10(0.01)) ,as.character(gene),'')),hjust=1,vjust=1)
+  }
+  if(!is.na(Title)){
+    p<-p+ggtitle(Title)
+  }
+  return(p)
+}
+#quick selection of top n genes basically
+AdaptiveThreshold<-function(results, n=30,Tstart=0.25){
+  m=Inf
+  while(n<=m){
+    Tstart=Tstart+0.05
+    m<-length(rownames(results)[(results$avg_log2FC>Tstart|results$avg_log2FC<(-Tstart))&results$value>10])
+  }
+  return(Tstart)
+}
+
+#borrowing some rushmore colors from the wes anderson color pack
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+
+#takes in enrichr output
+PlotEnrichment<-function(data, topn=10, returnplot=TRUE, title="Significant Pathways"){
+  data$value<- -log10(data$Adjusted.P.value)
+  #order by most signfiicant 
+  data$Term<-factor(data$Term, levels = rev(data$Term))
+  data<-data[order(data$value, decreasing = TRUE),]
+  #subset to top n 
+  data<-data[1:topn,]
+  plot<-ggplot(data, aes(x=value, y=Term, fill=ifelse(value>2, "Significant", "Not Significant")))+geom_bar(stat="identity")+xlab("-log10(p_adj)")+ylab("Pathway")+ggtitle(title)+
+    theme_classic()+scale_fill_manual(values=c("Significant" = "#CB2314", "Not Significant" = "#1E1E1E"))+ guides(fill=guide_legend(title=""))
+  if(returnplot){return(plot)}
+  return(data)
+}
+
+
+#modded from WA pallette 
+IsleofDogs1<-c("Bup.Nalo_vs_Nal_0" ="#9986A5", "Bup.Nalo_vs_Nal_3" = "#79402E", "Meth_vs_Bup.Nalo_0" = "#CCBA72", 
+                 "Meth_vs_Bup.Nalo_3" = "#0F0D0E", "Meth_vs_Nal_0" = "#D9D0D3", "Meth_vs_Nal_3" = "#8D8680")
+
+
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230606FinalObj.rds") 
+
+```
+ 
+```{r genesets}
+
+#grabbing hallmark as well as the curated, immune 
+m_df_H<- msigdbr(species = "Homo sapiens", category = "H")
+m_df_H<- rbind(msigdbr(species = "Homo sapiens", category = "C2"), m_df_H)
+m_df_H<- rbind(msigdbr(species = "Homo sapiens", category = "C7"), m_df_H)
+fgsea_sets<- m_df_H %>% split(x = .$gene_symbol, f = .$gs_name)
+``` 
+
+## transcription factor activities 
+
+The objective is to see if there are specific transcription factors that may be driving differential activity across conditions. We will be comparing at time 0 and time 3 in a nonbias manner (DE) and the graphing specific factors of interest. 
+
+
+```{r factor activities across conditions, fig.width=16, fig.height=9}
+results$T_Tp<-paste(results$Treatment, results$Timepoint, sep = "_")
+results$T_Tp<-factor(results$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+results_Polar_2<-subset(results, merged_clusters=="Memory_CD4_Polarized_2")
+
+DefaultAssay(results_Polar_2)<-"chromvar"
+Idents(results_Polar_2)<-results_Polar_2$T_Tp
+
+# month 3 comparisons 
+
+Meth_vs_Nal_3<-FindMarkers(results_Polar_2, "Methadone_3","Naltrexone_3", mean.fxn = rowMeans)
+Meth_vs_Bup.Nalo_3<-FindMarkers(results_Polar_2, "Methadone_3","Bup.Nalo_3", mean.fxn = rowMeans)
+Bup.Nalo_vs_Nal_3<-FindMarkers(results_Polar_2, "Bup.Nalo_3","Naltrexone_3", mean.fxn = rowMeans)
+
+# month 0 comparisons 
+Meth_vs_Nal_0<-FindMarkers(results_Polar_2, "Methadone_0","Naltrexone_0", mean.fxn = rowMeans)
+Meth_vs_Bup.Nalo_0<-FindMarkers(results_Polar_2, "Methadone_0","Bup.Nalo_0", mean.fxn = rowMeans)
+Bup.Nalo_vs_Nal_0<-FindMarkers(results_Polar_2, "Bup.Nalo_0","Naltrexone_0", mean.fxn = rowMeans)
+
+
+Meth_vs_Nal_3<-FixMotifID(Meth_vs_Nal_3, results_Polar_2)
+Meth_vs_Bup.Nalo_3<-FixMotifID(Meth_vs_Bup.Nalo_3, results_Polar_2)
+Bup.Nalo_vs_Nal_3<-FixMotifID(Bup.Nalo_vs_Nal_3, results_Polar_2)
+Meth_vs_Nal_0<-FixMotifID(Meth_vs_Nal_0, results_Polar_2)
+Meth_vs_Bup.Nalo_0<-FixMotifID(Meth_vs_Bup.Nalo_0, results_Polar_2)
+Bup.Nalo_vs_Nal_0<-FixMotifID(Bup.Nalo_vs_Nal_0, results_Polar_2)
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Bup.Nalo_vs_Nal_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_0)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_0)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Bup.Nalo_vs_Nal_0)
+
+
+VlnPlot(results_Polar_2, "MA0152.2", pt.size = 0.1 )+ggtitle("Nfatc2")
+VlnPlot(results_Polar_2, "MA0624.2", pt.size = 0.1 )+ggtitle("Nfatc1")
+
+VlnPlot(results_Polar_2, "MA1475.1", pt.size = 0.1 )+ggtitle("CREB3L4")
+VlnPlot(results_Polar_2, "MA0656.1", pt.size = 0.1 )+ggtitle("JDP2")
+VlnPlot(results_Polar_2, "MA0840.1", pt.size = 0.1 )+ggtitle("Creb5")
+VlnPlot(results_Polar_2, "MA0688.1", pt.size = 0.1 )+ggtitle("TBX2")
+
+VlnPlot(results_Polar_2, "MA0605.2", pt.size = 0.1 )+ggtitle("ATF3")
+VlnPlot(results_Polar_2, "MA1131.1", pt.size = 0.1 )+ggtitle("FOSL2::JUN")
+
+VlnPlot(results_Polar_2, "MA0101.1", pt.size = 0.1 )+ggtitle("REL")
+VlnPlot(results_Polar_2, "MA1930.1", pt.size = 0.1 )+ggtitle("CTCF")
+VlnPlot(results_Polar_2, "MA0107.1", pt.size = 0.1 )+ggtitle("RELA")
+
+VlnPlot(results_Polar_2, "MA0759.2", pt.size = 0.1 )+ggtitle("ELK3")
+VlnPlot(results_Polar_2, "MA0098.3", pt.size = 0.1 )+ggtitle("ETS1")
+VlnPlot(results_Polar_2, "MA0763.1", pt.size = 0.1 )+ggtitle("ETV3")
+
+
+Idents(results_Polar_2)<-factor(Idents(results_Polar_2),levels = c("Methadone_0","Bup.Nalo_0","Naltrexone_0","Methadone_3", "Bup.Nalo_3", "Naltrexone_3"))
+
+VlnPlot(results_Polar_2, "MA0152.2", pt.size = 0.1 )+ggtitle("Nfatc2")
+VlnPlot(results_Polar_2, "MA0624.2", pt.size = 0.1 )+ggtitle("Nfatc1")
+
+VlnPlot(results_Polar_2, "MA1475.1", pt.size = 0.1 )+ggtitle("CREB3L4")
+VlnPlot(results_Polar_2, "MA0656.1", pt.size = 0.1 )+ggtitle("JDP2")
+VlnPlot(results_Polar_2, "MA0840.1", pt.size = 0.1 )+ggtitle("Creb5")
+VlnPlot(results_Polar_2, "MA0688.1", pt.size = 0.1 )+ggtitle("TBX2")
+
+VlnPlot(results_Polar_2, "MA0605.2", pt.size = 0.1 )+ggtitle("ATF3")
+VlnPlot(results_Polar_2, "MA1131.1", pt.size = 0.1 )+ggtitle("FOSL2::JUN")
+
+VlnPlot(results_Polar_2, "MA0101.1", pt.size = 0.1 )+ggtitle("REL")
+VlnPlot(results_Polar_2, "MA1930.1", pt.size = 0.1 )+ggtitle("CTCF")
+VlnPlot(results_Polar_2, "MA0107.1", pt.size = 0.1 )+ggtitle("RELA")
+
+VlnPlot(results_Polar_2, "MA0759.2", pt.size = 0.1 )+ggtitle("ELK3")
+VlnPlot(results_Polar_2, "MA0098.3", pt.size = 0.1 )+ggtitle("ETS1")
+VlnPlot(results_Polar_2, "MA0763.1", pt.size = 0.1 )+ggtitle("ETV3")
+
+
+```
+
+## Surface protein differences 
+
+Doing the same thing as Chormvar but instead we're looking at protein expression. No significant differences identified. 
+
+
+```{r proteins across conditions, fig.width=16, fig.height=9}
+
+DefaultAssay(results_Polar_2)<-"ADT"
+Idents(results_Polar_2)<-results_Polar_2$T_Tp
+
+#need to first do CLR by library 
+
+results_Polar_2_split<-SplitObject(results_Polar_2, split.by = "orig.ident")
+
+results_Polar_2_split<-lapply(results_Polar_2_split, NormalizeData, normalization.method = "CLR")
+
+for (i in 1:9){
+  results_Polar_2_split[[i]]<-results_Polar_2_split[[i]]@assays$ADT@data
+}
+results_Polar_2_split<-do.call(cbind, results_Polar_2_split)
+#put it in but ensure things are correct
+results_Polar_2@assays$ADT@data<-results_Polar_2_split[,colnames(results_Polar_2)]
+
+Meth_vs_Nal_3<-FindMarkers(results_Polar_2, "Methadone_3","Naltrexone_3")
+Meth_vs_Bup.Nalo_3<-FindMarkers(results_Polar_2, "Methadone_3","Bup.Nalo_3")
+Bup.Nalo_vs_Nal_3<-FindMarkers(results_Polar_2, "Bup.Nalo_3","Naltrexone_3")
+
+# month 0 comparisons 
+Meth_vs_Nal_0<-FindMarkers(results_Polar_2, "Methadone_0","Naltrexone_0")
+Meth_vs_Bup.Nalo_0<-FindMarkers(results_Polar_2, "Methadone_0","Bup.Nalo_0")
+Bup.Nalo_vs_Nal_0<-FindMarkers(results_Polar_2, "Bup.Nalo_0","Naltrexone_0")
+
+#Bup.Nalo and Nal are not different at all (0 pass logfc)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_0)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_0)
+
+
+
+```
+
+## Gene expression and GSEA 
+
+
+### Standard DE 
+
+We're just using the standard wilcox/mann whitney U test here to look at the impact of these different conditions on gene expression
+```{r standard DE, fig.width=16, fig.height=9}
+DefaultAssay(results_Polar_2)<-"RNA"
+
+# month 3 comparisons 
+
+Meth_vs_Nal_3<-FindMarkers(results_Polar_2, "Methadone_3","Naltrexone_3")
+Meth_vs_Bup.Nalo_3<-FindMarkers(results_Polar_2, "Methadone_3","Bup.Nalo_3")
+Bup.Nalo_vs_Nal_3<-FindMarkers(results_Polar_2, "Bup.Nalo_3","Naltrexone_3")
+
+# month 0 comparisons 
+Meth_vs_Nal_0<-FindMarkers(results_Polar_2, "Methadone_0","Naltrexone_0")
+Meth_vs_Bup.Nalo_0<-FindMarkers(results_Polar_2, "Methadone_0","Bup.Nalo_0")
+Bup.Nalo_vs_Nal_0<-FindMarkers(results_Polar_2, "Bup.Nalo_0","Naltrexone_0")
+
+
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Bup.Nalo_vs_Nal_3)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Nal_0)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Meth_vs_Bup.Nalo_0)
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=Bup.Nalo_vs_Nal_0)
+
+VlnPlot(results_Polar_2, "KLRG1", pt.size = 0.1)
+
+#volcanos of just those highly differentially expressed
+VolPlot(Meth_vs_Nal_3)
+VolPlot(Meth_vs_Bup.Nalo_3)
+VolPlot(Bup.Nalo_vs_Nal_3)
+VolPlot(Meth_vs_Nal_0)
+VolPlot(Meth_vs_Bup.Nalo_0)
+VolPlot(Bup.Nalo_vs_Nal_0)
+
+#doing it again but with no cutoffs for FC
+
+# month 3 comparisons 
+
+Meth_vs_Nal_3<-FindMarkers(results_Polar_2, "Methadone_3","Naltrexone_3", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+Meth_vs_Bup.Nalo_3<-FindMarkers(results_Polar_2, "Methadone_3","Bup.Nalo_3", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+Bup.Nalo_vs_Nal_3<-FindMarkers(results_Polar_2, "Bup.Nalo_3","Naltrexone_3", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+
+# month 0 comparisons 
+Meth_vs_Nal_0<-FindMarkers(results_Polar_2, "Methadone_0","Naltrexone_0", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+Meth_vs_Bup.Nalo_0<-FindMarkers(results_Polar_2, "Methadone_0","Bup.Nalo_0", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+Bup.Nalo_vs_Nal_0<-FindMarkers(results_Polar_2, "Bup.Nalo_0","Naltrexone_0", min.pct = -Inf, min.diff.pct = -Inf, logfc.threshold = -Inf)
+
+#not placing data tables for these very large dataframes as they make the resulting html unusable 
+
+VolPlot(Meth_vs_Nal_3)
+VolPlot(Meth_vs_Bup.Nalo_3)
+VolPlot(Bup.Nalo_vs_Nal_3)
+VolPlot(Meth_vs_Nal_0)
+VolPlot(Meth_vs_Bup.Nalo_0)
+VolPlot(Bup.Nalo_vs_Nal_0)
+```
+#### GO analysis of DE genes from traditional analyses 
+
+Using Enrichr we can look for genesets that are enriched here for each comparison. 
+
+In general it doesn't look that interesting because the pathways involved are focused mainly on those dominated by ribosomal proteins, although there is a subset that interestingly has IL27 signaling. 
+
+```{r GO_trad, fig.width=16, fig.height=9}
+to_output<-list(Meth_vs_Nal_3,Meth_vs_Bup.Nalo_3,Bup.Nalo_vs_Nal_3,Meth_vs_Nal_0,Meth_vs_Bup.Nalo_0,Bup.Nalo_vs_Nal_0 )
+names(to_output)<-c("Meth_vs_Nal_3","Meth_vs_Bup.Nalo_3","Bup.Nalo_vs_Nal_3","Meth_vs_Nal_0","Meth_vs_Bup.Nalo_0","Bup.Nalo_vs_Nal_0")
+pcut<-0.05 
+LFCcut<-0.25
+
+websiteLive <- getOption("enrichR.live")
+dbs<-c("GO_Biological_Process_2023","GO_Molecular_Function_2023")
+outdir<-"~/gibbs/DOGMAMORPH/Ranalysis/enrichr/Trad_DE_Polar_2"
+#basically we'll loop through, write the subset of genes based on those cutoffs 
+for (i in 1:length(to_output)){
+  cur<-to_output[[i]][(to_output[[i]]$avg_log2FC< -LFCcut) | (to_output[[i]]$avg_log2FC> LFCcut),]
+  cur$p_val_adj<-p.adjust(cur$p_val, "BH")
+  up<-rownames(cur)[(cur$p_val_adj<pcut)&(cur$avg_log2FC>0)]
+  down<-rownames(cur)[(cur$p_val_adj<pcut)&(cur$avg_log2FC<0)]
+  write.table(up, paste0(outdir,"/", names(to_output)[[i]], "_up.txt"), 
+              quote = FALSE, row.names = FALSE, col.names = FALSE)
+  write.table(down, paste0(outdir,"/", names(to_output)[[i]], "_down.txt"), 
+              quote = FALSE, row.names = FALSE, col.names = FALSE)
+  up<-enrichr(up, dbs)
+  up_proc<-cbind(up$GO_Biological_Process_2023)
+  up_func<-cbind(up$GO_Molecular_Function_2023)
+
+  down<-enrichr(down, dbs)
+  down_proc<-cbind(down$GO_Biological_Process_2023)
+  down_func<-cbind(down$GO_Molecular_Function_2023)
+
+  print(PlotEnrichment(up_proc, topn = 20, title=paste("GO_proc",names(to_output)[[i]], "up" ,sep="_")))  
+  print(PlotEnrichment(down_proc, topn = 20, title=paste("GO_proc",names(to_output)[[i]], "down" ,sep="_")))
+  print(PlotEnrichment(up_func, topn = 20, title=paste("GO_func",names(to_output)[[i]], "up" ,sep="_")))
+  print(PlotEnrichment(down_func, topn = 20, title=paste("GO_func",names(to_output)[[i]], "down" ,sep="_")))
+  
+  write.table(up_proc,
+              paste0("~/gibbs/DOGMAMORPH/Ranalysis/enrichr/Trad_DE_Polar_2//Results_tables/","GO_proc_",names(to_output)[[i]], "_up.txt" ,sep="_"), quote = FALSE, row.names = FALSE)
+  write.table(down_proc,
+              paste0("~/gibbs/DOGMAMORPH/Ranalysis/enrichr/Trad_DE_Polar_2/Results_tables/","GO_proc_",names(to_output)[[i]], "_down.txt" ,sep="_"), quote = FALSE, row.names = FALSE)
+  write.table(up_func,
+              paste0("~/gibbs/DOGMAMORPH/Ranalysis/enrichr/Trad_DE_Polar_2/Results_tables/","GO_func_",names(to_output)[[i]], "_up.txt" ,sep="_"), quote = FALSE, row.names = FALSE)
+  write.table(down_func, paste0("~/gibbs/DOGMAMORPH/Ranalysis/enrichr/Trad_DE_Polar_2/Results_tables/","GO_func_",names(to_output)[[i]], "_down.txt" ,sep="_"), sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+
+
+
+```
+#### GSEA analysis of DE genes from traditional analyses 
+
+GSEA is a nice addition particularly in single cell because the signals are weaker due to inherent sparsity and pooling info across genes by ranking can be more powerful. 
+
+```{r GSEA_trad, fig.width=16, fig.height=9}
+GSEAres<-list()
+for (i in 1:length(to_output)){
+GSEAres[[i]]<-GSEA(to_output[[i]], genesets = fgsea_sets)
+GSEAres[[i]]<-GSEATable(GSEAwrap_out =GSEAres[[i]], gmt = fgsea_sets, name = names(to_output)[[i]] )}
+GSEAres<-GSEAbig(listofGSEAtables = GSEAres)
+
+saveRDS(GSEAres, file="~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230711GSEApolar2res.rds")
+#identified these in 20230627cytotoxicGSEA.R
+
+to_test<-c("HOUNKPE_HOUSEKEEPING_GENES","NAKAYA_PBMC_FLUMIST_AGE_18_50YO_3DY_DN","SHEN_SMARCA2_TARGETS_UP",
+           "GSE21063_WT_VS_NFATC1_KO_16H_ANTI_IGM_STIM_BCELL_UP","GSE26495_NAIVE_VS_PD1HIGH_CD8_TCELL_UP","GSE22886_CD8_VS_CD4_NAIVE_TCELL_DN",
+           "GSE41978_KLRG1_HIGH_VS_LOW_EFFECTOR_CD8_TCELL_DN","GSE41978_ID2_KO_VS_ID2_KO_AND_BIM_KO_KLRG1_LOW_EFFECTOR_CD8_TCELL_DN","GSE26495_NAIVE_VS_PD1HIGH_CD8_TCELL_UP",
+           "GSE36888_UNTREATED_VS_IL2_TREATED_TCELL_6H_UP","GSE17974_0.5H_VS_72H_IL4_AND_ANTI_IL12_ACT_CD4_TCELL_UP","GSE23505_UNTREATED_VS_4DAY_IL6_IL1_IL23_TREATED_CD4_TCELL_UP",
+           "GSE17974_0.5H_VS_72H_IL4_AND_ANTI_IL12_ACT_CD4_TCELL_UP","GSE2770_IL12_AND_TGFB_ACT_VS_ACT_CD4_TCELL_48H_DN","BROCKE_APOPTOSIS_REVERSED_BY_IL6",
+           "GSE21670_TGFB_VS_IL6_TREATED_STAT3_KO_CD4_TCELL_DN","GSE21670_UNTREATED_VS_IL6_TREATED_STAT3_KO_CD4_TCELL_DN","REACTOME_INFECTIOUS_DISEASE",
+           "THAKAR_PBMC_INACTIVATED_INFLUENZA_AGE_21_30YO_RESPONDERS_7DY_UP","DEBIASI_APOPTOSIS_BY_REOVIRUS_INFECTION_UP","HALLMARK_INTERFERON_GAMMA_RESPONSE",
+           "GSE26030_TH1_VS_TH17_RESTIMULATED_DAY5_POST_POLARIZATION_UP","GSE27434_WT_VS_DNMT1_KO_TREG_DN","GSE24574_BCL6_HIGH_VS_LOW_TFH_CD4_TCELL_UP",
+           "TIAN_TNF_SIGNALING_VIA_NFKB","PHONG_TNF_TARGETS_UP","SANA_TNF_SIGNALING_UP")
+
+for (i in 1:length(to_test)){
+  print(GSEAEnrichmentPlotComparison(to_test[i], GSEAres, "BOTH", cols = IsleofDogs1))
+}
+
+```
+
+
+
+```{r session info}
+devtools::session_info()
+```
