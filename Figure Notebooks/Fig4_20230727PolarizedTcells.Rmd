@@ -346,7 +346,7 @@ GSEAres<-GSEAbig(listofGSEAtables = GSEAres)
 
 
 to_plot<-c("GSE11057_CD4_EFF_MEM_VS_PBMC_UP","GSE8685_IL2_STARVED_VS_IL2_ACT_IL2_STARVED_CD4_TCELL_DN","BROWNE_INTERFERON_RESPONSIVE_GENES")
-DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.001))
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.05))
 GSEAEnrichmentPlotComparison(to_plot[1], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[2], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[3], GSEAres, "BOTH", cols = IsleofDogs1)
@@ -481,7 +481,7 @@ GSEAres<-GSEAbig(listofGSEAtables = GSEAres)
 
 
 to_plot<-c("GSE21670_TGFB_VS_IL6_TREATED_STAT3_KO_CD4_TCELL_DN","BROCKE_APOPTOSIS_REVERSED_BY_IL6","PHONG_TNF_TARGETS_UP")
-DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.001))
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.05))
 GSEAEnrichmentPlotComparison(to_plot[1], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[2], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[3], GSEAres, "BOTH", cols = IsleofDogs1)
@@ -619,7 +619,7 @@ GSEAres<-GSEAbig(listofGSEAtables = GSEAres)
 
 
 to_plot<-c("GSE2770_TGFB_AND_IL4_ACT_VS_ACT_CD4_TCELL_2H_UP","HALLMARK_INTERFERON_GAMMA_RESPONSE","PHONG_TNF_TARGETS_UP")
-DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.001))
+DT::datatable(rownames=TRUE, filter="top", class='cell-border stripe', extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), data=subset(GSEAres, padj<0.05))
 GSEAEnrichmentPlotComparison(to_plot[1], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[2], GSEAres, "BOTH", cols = IsleofDogs1)
 GSEAEnrichmentPlotComparison(to_plot[3], GSEAres, "BOTH", cols = IsleofDogs1)

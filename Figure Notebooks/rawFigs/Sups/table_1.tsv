@@ -1,0 +1,17 @@
+merged_clusters	HIV DNA+	HIV RNA+ and HIV DNA+	HIV not detected
+NaiveT_1	0	3	4760
+NaiveT_2	0	0	2005
+NaiveT_3	0	2	1390
+MemoryT_1	5	2	2882
+MemoryT_2	0	0	333
+MemoryT_Polarized_1	9	2	4226
+MemoryT_Polarized_2	3	6	3917
+Treg_proliferating	2	2	1669
+CytotoxicT	2	0	2571
+NK	0	0	1018
+Naive_B	0	0	2471
+Memory_B	0	0	759
+Plasma	0	0	94
+CD14_Mono	0	0	462
+cDC	0	0	437
+pDC	0	0	430

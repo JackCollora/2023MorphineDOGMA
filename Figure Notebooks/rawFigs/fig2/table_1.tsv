@@ -1,0 +1,33 @@
+HIV_type	merged_clusters	n
+HIV DNA+	NaiveT_1	0
+HIV DNA+	NaiveT_2	0
+HIV DNA+	NaiveT_3	0
+HIV DNA+	MemoryT_1	5
+HIV DNA+	MemoryT_2	0
+HIV DNA+	MemoryT_Polarized_1	9
+HIV DNA+	MemoryT_Polarized_2	3
+HIV DNA+	Treg_proliferating	2
+HIV DNA+	CytotoxicT	2
+HIV DNA+	NK	0
+HIV DNA+	Naive_B	0
+HIV DNA+	Memory_B	0
+HIV DNA+	Plasma	0
+HIV DNA+	CD14_Mono	0
+HIV DNA+	cDC	0
+HIV DNA+	pDC	0
+HIV RNA+ and HIV DNA+	NaiveT_1	3
+HIV RNA+ and HIV DNA+	NaiveT_2	0
+HIV RNA+ and HIV DNA+	NaiveT_3	2
+HIV RNA+ and HIV DNA+	MemoryT_1	2
+HIV RNA+ and HIV DNA+	MemoryT_2	0
+HIV RNA+ and HIV DNA+	MemoryT_Polarized_1	2
+HIV RNA+ and HIV DNA+	MemoryT_Polarized_2	6
+HIV RNA+ and HIV DNA+	Treg_proliferating	2
+HIV RNA+ and HIV DNA+	CytotoxicT	0
+HIV RNA+ and HIV DNA+	NK	0
+HIV RNA+ and HIV DNA+	Naive_B	0
+HIV RNA+ and HIV DNA+	Memory_B	0
+HIV RNA+ and HIV DNA+	Plasma	0
+HIV RNA+ and HIV DNA+	CD14_Mono	0
+HIV RNA+ and HIV DNA+	cDC	0
+HIV RNA+ and HIV DNA+	pDC	0

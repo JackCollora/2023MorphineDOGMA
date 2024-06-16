@@ -1,0 +1,213 @@
+---
+title: "RequestedSupplements"
+author: "Jack Collora"
+date: "2024-02-03"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading, echo=FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(Signac))
+results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230626FinalClusternames.rds")
+BottleRocket2 = c("#FAD510", "#CB2314", "#273046", "#354823", "#1E1E1E")
+BottleRocket3<-c("#fad510", "#e37c12", "#cb2314","#792a2d", "#273046", "#3b4357")
+
+results$merged_clusters<-factor(results$merged_clusters, levels = c("NaiveT_1","NaiveT_2", "NaiveT_3","MemoryT_1","MemoryT_2",
+                                                                    "MemoryT_Polarized_1","MemoryT_Polarized_2","Treg_proliferating",
+                                                                    "CytotoxicT","NK","Naive_B","Memory_B","Plasma","CD14_Mono","cDC","pDC"))
+Idents(results)<-results$merged_clusters
+
+results$T_Tp<-paste(results$Treatment, results$Timepoint, sep = "_")
+results$T_Tp<-factor(results$T_Tp, levels = c("Methadone_0","Methadone_3","Bup.Nalo_0", "Bup.Nalo_3", "Naltrexone_0", "Naltrexone_3"))
+results$HIV_type<-case_when(results$HIV_reads_ATAC>1 & results$HIV_reads_RNA>1 ~"HIV RNA+ and HIV DNA+",
+                            results$HIV_reads_ATAC>1 ~ "HIV DNA+", results$HIV_reads_RNA>1 ~ "HIV RNA+ and HIV DNA+", 
+                            T ~ "HIV not detected")
+```
+
+```{r generating UMAPS related to batch, fig.width=16, fig.height=9}
+
+DimPlot(results, split.by = "Participant", ncol = 4)+NoLegend()
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1a.pdf", width = 16, height = 9)
+DimPlot(results, split.by = "Participant", ncol = 4)+NoLegend()
+dev.off()->.
+
+DimPlot(results, split.by = "T_Tp", ncol = 4)+NoLegend()
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1b.pdf", width = 9, height = 16)
+DimPlot(results, split.by = "T_Tp", ncol = 2)+NoLegend()
+dev.off()->.
+
+```
+
+```{r proportions split by PBMC vs CD4, not significant in this case}
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source != "PBMC")
+
+meta$Treatment<-factor(meta$Treatment, levels = c("Methadone","Bup.Nalo","Naltrexone"))
+meta$Timepoint<-factor(meta$Timepoint, levels = c(0,3))
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","merged_clusters","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","merged_clusters","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","merged_clusters","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","merged_clusters") )
+meta_tots_by_part$FC<-log2(meta_tots_by_part$prop3/meta_tots_by_part$prop)
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>3]<-3
+meta_tots_by_part$clip[meta_tots_by_part$clip< -3]<- -3
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1c.pdf", width = 16, height = 9)
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+dev.off()->.
+
+
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-0
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-0
+
+twoway.anova<-aov(FC ~ Treatment * merged_clusters, meta_tots_by_part)
+#p value now significant on the transformed values, follow ups justified 
+summary(twoway.anova)
+
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source == "PBMC")
+meta$Treatment<-factor(meta$Treatment, levels = c("Methadone","Bup.Nalo","Naltrexone"))
+meta$Timepoint<-factor(meta$Timepoint, levels = c(0,3))
+meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]
+meta_tots_by_part<-split(meta_tots_by_part, meta_tots_by_part$Timepoint)
+
+meta_tots_by_part$`3`<-meta_tots_by_part$`3`[, c("Treatment","Participant","merged_clusters","prop")]
+meta_tots_by_part$`0`<-meta_tots_by_part$`0`[, c("Treatment","Participant","merged_clusters","prop")]
+colnames(meta_tots_by_part$`3`)<-c("Treatment","Participant","merged_clusters","prop3")
+meta_tots_by_part<-merge(meta_tots_by_part$`0`,meta_tots_by_part$`3`, by=c("Treatment","Participant","merged_clusters") )
+meta_tots_by_part$FC<-log2(meta_tots_by_part$prop3/meta_tots_by_part$prop)
+meta_tots_by_part$clip<-meta_tots_by_part$FC
+meta_tots_by_part$clip[meta_tots_by_part$clip>3]<-3
+meta_tots_by_part$clip[meta_tots_by_part$clip< -3]<- -3
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1d.pdf", width = 16, height = 9)
+ggplot(meta_tots_by_part, aes(x=merged_clusters, y=clip, group=Treatment, color=Treatment))+geom_point(position=position_dodge(width = 0.5), size=3)+theme_classic()+theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust = 1, size = 16))+geom_hline(yintercept = 0, linetype=3)+ylab("log2(FC)")+xlab("Cluster")+ylim(c(-3.5,3.5))+ggtitle("Clipped Log2FC cluster proportions")
+dev.off()->.
+
+meta_tots_by_part$FC[is.infinite(meta_tots_by_part$FC)]<-0
+meta_tots_by_part$FC[is.nan(meta_tots_by_part$FC)]<-0
+
+twoway.anova<-aov(FC ~ Treatment * merged_clusters, meta_tots_by_part)
+#p value now significant on the transformed values, follow ups justified 
+summary(twoway.anova)
+
+
+#making the pies
+
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source != "PBMC")
+
+meta<-group_by(meta, T_Tp, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1e_CD4.pdf", width = 16, height = 9)
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+dev.off()->.
+
+
+
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source == "PBMC")
+
+meta<-group_by(meta, T_Tp, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1e_PBMC.pdf", width = 16, height = 9)
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+dev.off()->.
+
+meta<-results@meta.data
+
+meta<-group_by(meta, T_Tp, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
+
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/1e_all.pdf", width = 16, height = 9)
+ggplot(meta, aes(x="", y=prop, fill=merged_clusters)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+facet_wrap(~T_Tp, ncol = 2)
+dev.off()->.
+
+```
+```{r making cell tables}
+
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "HIV_type", values_from = n)
+
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_1.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+#table of HIV+ by treatment
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, Treatment, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "HIV_type", values_from = n)
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_2.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+#table of HIV+ by timepoint 
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, Timepoint, .drop=FALSE)%>%summarise(n=n()) %>% pivot_wider( names_from = "HIV_type", values_from = n)
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_3.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+#making this table again but split by cell source
+
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source == "PBMC")
+meta<-group_by(meta, HIV_type, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "HIV_type", values_from = n)
+
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_4_PBMC.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source != "PBMC")
+meta<-group_by(meta, HIV_type, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "HIV_type", values_from = n)
+
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_4_CD4.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+```
+
+```{r adding more supps for numbers }
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source != "PBMC")
+meta<-group_by(meta, T_Tp, merged_clusters,Participant, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "merged_clusters", values_from = n)
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_5_CD4.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+meta<-results@meta.data
+meta<-subset(meta, Cell.Source == "PBMC")
+meta<-group_by(meta, HIV_type, merged_clusters,Participant, .drop=FALSE)%>%summarise(n=n())%>% pivot_wider( names_from = "merged_clusters", values_from = n)
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/Sups/table_5_PBMC.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+```
+
+
+```{r}
+devtools::session_info()
+```
+

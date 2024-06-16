@@ -1,0 +1,15 @@
+HIV_type	Participant	NaiveT_1	NaiveT_2	NaiveT_3	MemoryT_1	MemoryT_2	MemoryT_Polarized_1	MemoryT_Polarized_2	Treg_proliferating	CytotoxicT	NK	Naive_B	Memory_B	Plasma	CD14_Mono	cDC	pDC
+HIV DNA+	NA	0	0	0	0	0	0	NA	0	0	0	0	0	0	0	0	0
+HIV DNA+	5009	NA	NA	NA	NA	NA	NA	1	NA	NA	NA	NA	NA	NA	NA	NA	NA
+HIV not detected	5003	11	12	3	9	2	3	12	2	7	9	29	4	NA	2	NA	NA
+HIV not detected	5014	64	14	27	17	4	6	46	11	42	13	89	72	NA	33	5	11
+HIV not detected	5016	63	52	16	15	2	38	36	3	238	54	290	143	5	6	17	26
+HIV not detected	5017	42	23	12	27	6	1	4	5	25	6	35	4	NA	7	1	5
+HIV not detected	5018	1012	94	355	74	9	594	278	59	439	119	383	194	13	109	48	102
+HIV not detected	5020	70	24	8	57	7	47	53	20	31	91	222	29	4	12	10	34
+HIV not detected	5021	4	4	4	5	NA	7	11	2	31	38	9	18	2	23	NA	1
+HIV not detected	5023	48	7	46	13	1	9	13	1	6	27	100	14	NA	26	8	20
+HIV not detected	5026	160	137	19	53	3	43	99	32	35	35	184	63	6	60	10	13
+HIV not detected	5035	85	45	11	32	1	40	67	9	206	76	115	54	6	13	8	52
+HIV not detected	5037	7	4	2	12	1	18	36	10	137	56	60	15	1	4	7	20
+HIV not detected	5009	NA	2	2	6	NA	11	16	NA	89	15	47	9	NA	2	2	20

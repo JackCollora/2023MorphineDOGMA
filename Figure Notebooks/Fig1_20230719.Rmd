@@ -28,6 +28,10 @@ BottleRocket3<-c("#fad510", "#e37c12", "#cb2314","#792a2d", "#273046", "#3b4357"
 ```{r umaps markers and morphine, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
 
 DefaultAssay(results)<-"RNA"
+
+results$merged_clusters<-factor(results$merged_clusters, levels = c("NaiveT_1","NaiveT_2", "NaiveT_3","MemoryT_1","MemoryT_2",
+                                                                    "MemoryT_Polarized_1","MemoryT_Polarized_2","Treg_proliferating",
+                                                                    "CytotoxicT","NK","Naive_B","Memory_B","Plasma","CD14_Mono","cDC","pDC"))
 Idents(results)<-results$merged_clusters
 
 DimPlot(results, label = TRUE)+NoLegend()
@@ -50,17 +54,24 @@ top10<-group_by(Markers, cluster)%>%slice_max(avg_log2FC, n=12)%>%select(gene)
 top10<-unique(top10$gene)
 results<-ScaleData(results, features = top10)
 
-DoHeatmap(results, top10, disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+DoHeatmap(results, top10, disp.min = -2, disp.max = 2)
 
 pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/B.pdf", width = 16, height = 9)
-DoHeatmap(results, top10, disp.min = -2, disp.max = 2)+scale_fill_gradientn(limits = c(-2,2), colors = c(BottleRocket2[1], "white", BottleRocket2[4]))
+DoHeatmap(results, top10, disp.min = -2, disp.max = 2)
 dev.off()->.
 
 Idents(results)<-factor(results$merged_clusters, levels = rev(levels(results$merged_clusters)))
 
 #RNA markers dotplot
 
-RNA.marks<-c("CD3D","CD4","FOXP3", "IL2RA","MKI67","GATA3", "CTSH", "CCR7", "SELL", "TCF7", "IL7R", "CD8A","GZMB", "CCL5", "TBX21", "GNLY","NKG7","MS4A1","CST3","LYZ","S100A4","FCER1A","MS4A7", "FCGR3A")
+RNA.marks<-c("CD3D","CD4", "SELL", "CCR7", "TCF7", "JUN","FOS","LTA","LTB","IFNG","IL2","TNF", "GATA3", "RORC",  "FOXP3","IL2RA","MKI67",
+             "CD8A","GZMB", "CCL5",  "GNLY","NKG7","MS4A1","CST3","LYZ","S100A4","FCER1A","MS4A7", "FCGR3A")
+
+
+
+
+
+
 DotPlot(results, features= RNA.marks) + theme(axis.text.x = element_text(angle = 90))
 
 pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/C.pdf", width = 16, height = 9)
@@ -72,7 +83,15 @@ dev.off()->.
 DefaultAssay(results)<-"ADT"
 results<-NormalizeData(results, normalization.method = "CLR")
 
-protein.marks<-c("CD3-TotalA","CD4-TotalA","CD25-TotalA","CD45RO-TotalA", "CD45RA-TotalA", "HLA-DR-DP-DQ-TotalA", "CD279-TotalA","TIGIT-TotalA", "KLRG1-TotalA","CX3CR1-TotalA","CD194-TotalA","CD196-TotalA","CD8-TotalA", "CD56-TotalA","NKp80-TotalA", "CD19-TotalA","IgD-TotalA","CD27-TotalA", "CD11b-TotalA","CD11c-TotalA", "CD86-TotalA","CD1c-TotalA", "CD123-TotalA")
+protein.marks<-c("CD3-TotalA","CD4-TotalA","CD45RO-TotalA", "CD45RA-TotalA", "CD27-TotalA", "HLA-DR-DP-DQ-TotalA", "CD183-TotalA","CX3CR1-TotalA","CD196-TotalA",
+                 "CD195-TotalA","CD194-TotalA", "CD279-TotalA","TIGIT-TotalA", "CD8-TotalA", "CD56-TotalA","NKp80-TotalA", "CD19-TotalA",
+                 "IgD-TotalA", "CD11b-TotalA","CD11c-TotalA", "CD86-TotalA","CD1c-TotalA")
+
+
+
+
+
+
 DotPlot(results, features= protein.marks) + theme(axis.text.x = element_text(angle = 90))
 
 pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig1/D.pdf", width = 16, height = 9)
@@ -88,6 +107,7 @@ dev.off()->.
 ```{r fold change over time, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
 Idents(results)<-results$merged_clusters
 meta<-results@meta.data
+meta$Treatment<-factor(meta$Treatment, levels = c("Methadone","Bup.Nalo","Naltrexone"))
 meta$Timepoint<-factor(meta$Timepoint, levels = c(0,3))
 meta_tots_by_part<-group_by(meta, Treatment,Timepoint, Participant, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%mutate(prop=n/sum(n))%>%ungroup()
 meta_tots_by_part<-meta_tots_by_part[!is.nan(meta_tots_by_part$prop),]

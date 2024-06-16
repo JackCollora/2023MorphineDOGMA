@@ -153,8 +153,30 @@ FixMotifID<-function(markeroutput, seuratobj){
   return(markeroutput)
 }
 
+VolPlot<-function(results,top=TRUE, adthresh=TRUE, thresh=0.2, threshn=30, Title=NA){
+  results$value<-(-log10(results$p_val_adj))
+  results$value[results$value==Inf]<-300
+  results$gene<-rownames(results)
+  p<-ggplot(results,aes(x=avg_log2FC, y=value, label=gene))+geom_point()+theme_classic()+xlab("Average Log Fold Change")+ylab("-log10 adjusted p value")+theme(plot.title = element_text(hjust = 0.5))
+  if(adthresh==TRUE){thresh<-AdaptiveThreshold(results, Tstart=thresh,n=threshn)}
+  if(top==TRUE){
+    p<- p + geom_text_repel(aes(label=ifelse((avg_log2FC>thresh|avg_log2FC<(-thresh))&value>(-log10(0.01)) ,as.character(gene),'')),hjust=1,vjust=1)
+  }
+  if(!is.na(Title)){
+    p<-p+ggtitle(Title)
+  }
+  return(p)
+}
 
 
+AdaptiveThreshold<-function(results, n=30,Tstart=0.25){
+  m=Inf
+  while(n<=m){
+    Tstart=Tstart+0.05
+    m<-length(rownames(results)[(results$avg_log2FC>Tstart|results$avg_log2FC<(-Tstart))&results$value>10])
+  }
+  return(Tstart)
+}
 ```
 # HIV infected cells 
 
@@ -172,8 +194,11 @@ results<-readRDS("~/gibbs/DOGMAMORPH/Ranalysis/Objects/20230626FinalClusternames
 ```{r umaps and cluster memberships, echo=TRUE, fig.width= 16, fig.height= 9, dev='png'}
 
 results$HIV_type<-case_when(results$HIV_reads_ATAC>1 & results$HIV_reads_RNA>1 ~"HIV RNA+ and HIV DNA+",
-                            results$HIV_reads_ATAC>1 ~ "HIV DNA+", results$HIV_reads_RNA>1 ~ "HIV RNA+", 
+                            results$HIV_reads_ATAC>1 ~ "HIV DNA+", results$HIV_reads_RNA>1 ~ "HIV RNA+ and HIV DNA+", 
                             T ~ "HIV not detected")
+results$merged_clusters<-factor(results$merged_clusters, levels = c("NaiveT_1","NaiveT_2", "NaiveT_3","MemoryT_1","MemoryT_2",
+                                                                    "MemoryT_Polarized_1","MemoryT_Polarized_2","Treg_proliferating",
+                                                                    "CytotoxicT","NK","Naive_B","Memory_B","Plasma","CD14_Mono","cDC","pDC"))
 
 umapcords<-data.frame(results@reductions$umap@cell.embeddings)
 umapcords$HIV<-results$HIV_type
@@ -293,6 +318,12 @@ pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/E_H.pdf"
 VlnPlot(results.sub, features = toPlot, pt.size = 0, ncol = 4)
 dev.off()
 
+
+VolPlot(marks_either.sub)
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/I.pdf",width = 16, height = 9)
+VolPlot(marks_either.sub)
+dev.off()
+
 ```
 
 
@@ -335,6 +366,38 @@ dev.off()
 
 ```
 
+```{r}
+
+#table of HIV+ by cluster
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, merged_clusters, .drop=FALSE)%>%summarise(n=n())%>%filter(HIV_type!="HIV not detected")
+
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/table_1.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+#table of HIV+ by treatment
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, Treatment, .drop=FALSE)%>%summarise(n=n())%>%filter(HIV_type!="HIV not detected")
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/table_2.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+#table of HIV+ by timepoint 
+meta<-results@meta.data
+meta<-group_by(meta, HIV_type, Timepoint, .drop=FALSE)%>%summarise(n=n())%>%filter(HIV_type!="HIV not detected")
+write.table(meta, "~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/table_3.tsv",sep="\t", row.names = FALSE, quote = FALSE )
+
+#hiv reads plot
+results$normHIV<-log((results$HIV_UMI_RNA/results$nCount_RNA)*10000 + 1)
+results$TP_Treat<-paste(results$Timepoint, results$Treatment)
+results$TP_Treat<-factor(results$TP_Treat, levels = c("0 Methadone","3 Methadone", "0 Bup.Nalo",
+                                                      "3 Bup.Nalo",   "0 Naltrexone",      "3 Naltrexone"))
+Idents(results)<-!is.na(results$HIV_UMI_RNA)
+VlnPlot(results, "normHIV",idents = TRUE, group.by = "TP_Treat" )
+
+
+pdf("~/gibbs/DOGMAMORPH/Ranalysis/Scripts/Figure Notebooks/rawFigs/fig2/HIV_umi_extra.pdf",width = 16, height = 9)
+VlnPlot(results, "normHIV",idents = TRUE, group.by = "TP_Treat" )
+
+dev.off()
+
+```
 
 
 
